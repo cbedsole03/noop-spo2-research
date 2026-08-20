@@ -13,6 +13,13 @@ struct BackupSyncView: View {
     @State private var lastMs = FolderBackup.lastBackupMs
     @State private var keep = FolderBackup.keepCount
     @State private var busy = false
+    @State private var serverArchiveEnabled = ServerArchiveSync.enabled
+    @State private var serverArchiveBaseURL = ServerArchiveSync.baseURL
+    @State private var serverArchivePassword = ""
+    @State private var serverArchiveHasPassword = ServerArchiveSync.hasPassword
+    @State private var serverArchiveLastMs = ServerArchiveSync.lastSuccessMs
+    @State private var serverArchiveStatus = ServerArchiveSync.lastStatus
+    @State private var serverArchiveBusy = false
 
     // Result alert (backup outcome / restore outcome).
     @State private var alertTitle = ""
@@ -34,6 +41,7 @@ struct BackupSyncView: View {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
                 folderCard
                 autoCard
+                serverArchiveCard
                 restoreCard
             }
         }
@@ -164,6 +172,74 @@ struct BackupSyncView: View {
         }
     }
 
+
+    private var serverArchiveCard: some View {
+        StrandCard(padding: 20, tint: serverArchiveEnabled ? StrandPalette.accent : nil) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .center, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Server archive")
+                            .font(StrandFont.headline).foregroundStyle(StrandPalette.textPrimary)
+                        Text("Uploads one full raw .noopbak database snapshot to your NOOP server per day, when you open the app. This is for your private server, not the public NOOP project.")
+                            .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                    Toggle("Server archive", isOn: $serverArchiveEnabled)
+                        .labelsHidden().toggleStyle(.switch).tint(StrandPalette.accent)
+                        .onChangeCompat(of: serverArchiveEnabled) { on in ServerArchiveSync.enabled = on }
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Server URL")
+                        .font(StrandFont.overline).foregroundStyle(StrandPalette.textTertiary)
+                    TextField("http://192.168.1.219", text: $serverArchiveBaseURL)
+                        .textFieldStyle(.roundedBorder)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled(true)
+                        .onChangeCompat(of: serverArchiveBaseURL) { ServerArchiveSync.baseURL = $0 }
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Server password")
+                        .font(StrandFont.overline).foregroundStyle(StrandPalette.textTertiary)
+                    SecureField(serverArchiveHasPassword ? "Password saved" : "Enter server password", text: $serverArchivePassword)
+                        .textFieldStyle(.roundedBorder)
+                    HStack(spacing: 10) {
+                        NoopButton("Save password", systemImage: "key", kind: .secondary) {
+                            if ServerArchiveSync.savePassword(serverArchivePassword) {
+                                serverArchivePassword = ""
+                                serverArchiveHasPassword = true
+                                serverArchiveStatus = "Server archive password saved."
+                            } else {
+                                serverArchiveStatus = "Could not save server archive password."
+                            }
+                        }
+                        .disabled(serverArchivePassword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                        if serverArchiveHasPassword {
+                            NoopButton("Clear", systemImage: "trash", kind: .tertiary) {
+                                ServerArchiveSync.clearPassword()
+                                serverArchiveHasPassword = false
+                                serverArchiveStatus = "Server archive password cleared."
+                            }
+                        }
+                    }
+                }
+
+                Text(serverArchiveLastMs > 0 ? "Last server upload: \(relativeTime(serverArchiveLastMs))" : "No server upload yet.")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+                Text(serverArchiveStatus)
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                NoopButton(serverArchiveBusy ? "Uploading…" : "Upload to server now",
+                           systemImage: "server.rack", kind: .primary, fullWidth: true) { uploadToServerNow() }
+                    .disabled(serverArchiveBusy || !serverArchiveEnabled || !serverArchiveHasPassword)
+            }
+        }
+    }
+
     private var restoreCard: some View {
         StrandCard(padding: 20) {
             VStack(alignment: .leading, spacing: 10) {
@@ -237,6 +313,24 @@ struct BackupSyncView: View {
                 alertMessage = ok
                     ? String(localized: "Saved a backup to your folder.")
                     : String(localized: "Backup failed - re-pick the folder and try again.")
+                showAlert = true
+            }
+        }
+    }
+
+
+    private func uploadToServerNow() {
+        serverArchiveBusy = true
+        ServerArchiveSync.baseURL = serverArchiveBaseURL
+        ServerArchiveSync.enabled = serverArchiveEnabled
+        Task {
+            defer { serverArchiveBusy = false }
+            let ok = await ServerArchiveSync.uploadNow(checkpoint: { await model.repo.checkpointForBackup() })
+            await MainActor.run {
+                serverArchiveLastMs = ServerArchiveSync.lastSuccessMs
+                serverArchiveStatus = ServerArchiveSync.lastStatus
+                alertTitle = ok ? String(localized: "Uploaded to server") : String(localized: "Server upload problem")
+                alertMessage = serverArchiveStatus
                 showAlert = true
             }
         }

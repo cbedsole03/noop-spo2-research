@@ -308,6 +308,7 @@ struct RootView: View {
             let backupRepo = repo
             Task.detached(priority: .utility) {
                 await FolderBackup.catchUpIfDue(checkpoint: { await backupRepo.checkpointForBackup() })
+                await ServerArchiveSync.catchUpIfDue(checkpoint: { await backupRepo.checkpointForBackup() })
             }
         }
         // Honour a cross-screen request to open a top-level destination (e.g. Live's "Manage devices"),
