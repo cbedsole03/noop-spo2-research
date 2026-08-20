@@ -13,7 +13,7 @@ enum ServerArchiveSync {
     static let lastSuccessDayKey = "serverArchive.lastSuccessDay"
     static let lastSuccessMsKey = "serverArchive.lastSuccessMs"
     static let lastStatusKey = "serverArchive.lastStatus"
-    static let defaultBaseURL = "http://192.168.1.219"
+    static let defaultBaseURL = ""
 
     private static let dayMs = 24 * 60 * 60 * 1000
 

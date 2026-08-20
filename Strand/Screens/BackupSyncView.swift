@@ -193,7 +193,7 @@ struct BackupSyncView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Server URL")
                         .font(StrandFont.overline).foregroundStyle(StrandPalette.textTertiary)
-                    TextField("http://192.168.1.219", text: $serverArchiveBaseURL)
+                    TextField("https://noop.example.com or http://server.local", text: $serverArchiveBaseURL)
                         .textFieldStyle(.roundedBorder)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled(true)
