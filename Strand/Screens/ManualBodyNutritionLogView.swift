@@ -136,12 +136,23 @@ struct ManualBodyNutritionLogView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Weight (\(weightUnit))")
+                    Text("Weight")
                         .font(StrandFont.overline)
                         .foregroundStyle(StrandPalette.textTertiary)
-                    TextField(unitSystem == .imperial ? "e.g. 185" : "e.g. 84", text: $weightText)
-                        .keyboardType(.decimalPad)
-                        .textFieldStyle(.roundedBorder)
+                    HStack(spacing: 8) {
+                        TextField(unitSystem == .imperial ? "e.g. 185" : "e.g. 84", text: $weightText)
+                            .keyboardType(.decimalPad)
+                            .textFieldStyle(.roundedBorder)
+                        Text(weightUnit)
+                            .font(StrandFont.footnote)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(StrandPalette.textSecondary)
+                            .frame(minWidth: 34)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 10)
+                            .background(NoopPanelSurface(cornerRadius: 9))
+                            .accessibilityHidden(true)
+                    }
                     Text("Replaces today's latest weight reading.")
                         .font(StrandFont.caption)
                         .foregroundStyle(StrandPalette.textTertiary)
@@ -195,9 +206,14 @@ struct ManualBodyNutritionLogView: View {
                     .font(StrandFont.rounded(28, weight: .bold))
                     .foregroundStyle(StrandPalette.textPrimary)
                     .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                    .layoutPriority(1)
                 Text(unit)
                     .font(StrandFont.caption)
                     .foregroundStyle(StrandPalette.textTertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

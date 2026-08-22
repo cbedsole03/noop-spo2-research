@@ -180,6 +180,26 @@ public struct TrendChart: View {
         showsBars ? min(0, resolvedYDomain.lowerBound)...resolvedYDomain.upperBound : resolvedYDomain
     }
 
+    /// Chart cards are narrow on iPhone, so dates need fewer labels than Swift Charts' automatic
+    /// default and a shorter format for longer windows. The full date remains available in the
+    /// hover/tap tooltip; the axis is only for orienting the trend at a glance.
+    private var xAxisDesiredCount: Int {
+        guard let first = points.first?.date, let last = points.last?.date else { return 3 }
+        let days = max(1, Calendar.autoupdatingCurrent.dateComponents([.day], from: first, to: last).day ?? 1)
+        switch days {
+        case ...10: return 4
+        case ...90: return 4
+        case ...365: return 3
+        default: return 3
+        }
+    }
+
+    private var usesMonthOnlyXAxisLabels: Bool {
+        guard let first = points.first?.date, let last = points.last?.date else { return false }
+        let days = max(1, Calendar.autoupdatingCurrent.dateComponents([.day], from: first, to: last).day ?? 1)
+        return days > 90
+    }
+
     public var body: some View {
         Chart {
             if showsBars {
@@ -256,10 +276,24 @@ public struct TrendChart: View {
         // every mark (line, area, points, overshoot) to the chart rectangle.
         .chartPlotStyle { plotArea in plotArea.clipped() }
         .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 5)) { _ in
-                AxisGridLine().foregroundStyle(StrandPalette.hairline.opacity(0.4))
-                AxisValueLabel().foregroundStyle(StrandPalette.textTertiary)
-                    .font(StrandFont.footnote)
+            if usesMonthOnlyXAxisLabels {
+                AxisMarks(values: .automatic(desiredCount: xAxisDesiredCount)) { _ in
+                    AxisGridLine().foregroundStyle(StrandPalette.hairline.opacity(0.4))
+                    AxisValueLabel(format: .dateTime.month(.abbreviated))
+                        .foregroundStyle(StrandPalette.textTertiary)
+                        .font(StrandFont.footnote)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+            } else {
+                AxisMarks(values: .automatic(desiredCount: xAxisDesiredCount)) { _ in
+                    AxisGridLine().foregroundStyle(StrandPalette.hairline.opacity(0.4))
+                    AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+                        .foregroundStyle(StrandPalette.textTertiary)
+                        .font(StrandFont.footnote)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
             }
         }
         .chartYAxis {
