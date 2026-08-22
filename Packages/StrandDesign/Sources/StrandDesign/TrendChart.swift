@@ -137,6 +137,14 @@ public struct TrendChart: View {
         let f = DateFormatter(); f.dateFormat = "EEE d MMM"; return f
     }()
 
+    private static let sharedXAxisMonthDayFormatter: DateFormatter = {
+        let f = DateFormatter(); f.setLocalizedDateFormatFromTemplate("MMMd"); return f
+    }()
+
+    private static let sharedXAxisMonthFormatter: DateFormatter = {
+        let f = DateFormatter(); f.setLocalizedDateFormatFromTemplate("MMM"); return f
+    }()
+
     /// Default tooltip date format ("EEE d MMM"), exposed so it can seed the
     /// `dateFormat` default argument.
     public static func defaultDateString(_ date: Date) -> String {
@@ -198,6 +206,13 @@ public struct TrendChart: View {
         guard let first = points.first?.date, let last = points.last?.date else { return false }
         let days = max(1, Calendar.autoupdatingCurrent.dateComponents([.day], from: first, to: last).day ?? 1)
         return days > 90
+    }
+
+    private func xAxisDateString(_ date: Date) -> String {
+        let formatter = usesMonthOnlyXAxisLabels
+            ? Self.sharedXAxisMonthFormatter
+            : Self.sharedXAxisMonthDayFormatter
+        return formatter.string(from: date)
     }
 
     public var body: some View {
@@ -276,24 +291,17 @@ public struct TrendChart: View {
         // every mark (line, area, points, overshoot) to the chart rectangle.
         .chartPlotStyle { plotArea in plotArea.clipped() }
         .chartXAxis {
-            if usesMonthOnlyXAxisLabels {
-                AxisMarks(values: .automatic(desiredCount: xAxisDesiredCount)) { _ in
-                    AxisGridLine().foregroundStyle(StrandPalette.hairline.opacity(0.4))
-                    AxisValueLabel(format: .dateTime.month(.abbreviated))
-                        .foregroundStyle(StrandPalette.textTertiary)
-                        .font(StrandFont.footnote)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
+            AxisMarks(values: .automatic(desiredCount: xAxisDesiredCount)) { value in
+                AxisGridLine().foregroundStyle(StrandPalette.hairline.opacity(0.4))
+                AxisValueLabel {
+                    if let date = value.as(Date.self) {
+                        Text(xAxisDateString(date))
+                    }
                 }
-            } else {
-                AxisMarks(values: .automatic(desiredCount: xAxisDesiredCount)) { _ in
-                    AxisGridLine().foregroundStyle(StrandPalette.hairline.opacity(0.4))
-                    AxisValueLabel(format: .dateTime.month(.abbreviated).day())
-                        .foregroundStyle(StrandPalette.textTertiary)
-                        .font(StrandFont.footnote)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                }
+                .foregroundStyle(StrandPalette.textTertiary)
+                .font(StrandFont.footnote)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
             }
         }
         .chartYAxis {
