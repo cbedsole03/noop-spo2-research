@@ -74,7 +74,11 @@ enum ServerArchiveSync {
         try? fm.removeItem(at: staged)
         defer { try? fm.removeItem(at: staged) }
 
-        guard case .exported = await DataBackup.writeBackup(checkpoint: checkpoint, to: staged) else {
+        guard case .exported = await DataBackup.writeBackup(
+            checkpoint: checkpoint,
+            to: staged,
+            includeRawResearchArchive: true
+        ) else {
             setStatus("Could not create verified local backup for server upload.")
             return false
         }

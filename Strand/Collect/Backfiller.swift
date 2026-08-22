@@ -53,6 +53,8 @@ final class Backfiller {
     /// decoded streams are still durable and the trim is still acked (decoded is the product of
     /// record). Injected for tests; backed by UserDefaults in the production init site.
     private let enableRawCapture: Bool
+    /// Live production gate for raw research capture. Tests can keep using the fixed boolean seam.
+    private let rawCaptureEnabled: () -> Bool
 
     /// The clock reference set by BLEManager when GET_CLOCK confirms (required for decoding).
     var clockRef: ClockRef?
@@ -210,6 +212,7 @@ final class Backfiller {
          deviceId: String,
          ackTrim: @escaping (_ trim: UInt32, _ endData: [UInt8]) -> Void,
          enableRawCapture: Bool = false,
+         rawCaptureEnabled: @escaping () -> Bool = { false },
          log: ((String) -> Void)? = nil,
          rejectedSink: ((_ frames: [[UInt8]], _ trim: UInt32, _ family: DeviceFamily) -> Bool)? = nil,
          onChunk: ((_ decoded: Bool, _ console: Bool) -> Void)? = nil,
@@ -226,6 +229,7 @@ final class Backfiller {
         self.deviceId = deviceId
         self.ackTrim = ackTrim
         self.enableRawCapture = enableRawCapture
+        self.rawCaptureEnabled = rawCaptureEnabled
         self.log = log
         self.rejectedSink = rejectedSink
         self.onChunk = onChunk
@@ -755,7 +759,7 @@ final class Backfiller {
 
             // RAW: only persisted when the research toggle is ON. Default OFF → decoded-only; the
             // chunk is still durably committed (decoded) so the trim is safe to advance + ack.
-            if enableRawCapture {
+            if enableRawCapture || rawCaptureEnabled() {
                 let meta = RawBatchMeta(
                     batchId: "hist-\(deviceId)-\(trim)",
                     deviceId: deviceId,

@@ -57,6 +57,9 @@ final class Collector {
     /// Research toggle. When false (DEFAULT) no raw frames are persisted at all — the app is
     /// decoded-only. Injected for tests; backed by UserDefaults in the production init site.
     private let enableRawCapture: Bool
+    /// Live production gate for raw research capture. Kept separate from the boolean test seam so
+    /// the in-app research switch takes effect for the next BLE batch without requiring a relaunch.
+    private let rawCaptureEnabled: () -> Bool
     private let now: () -> Int
     private let monotonic: () -> TimeInterval
 
@@ -101,11 +104,13 @@ final class Collector {
     init(store: StoreWriting, deviceId: String,
          policy: CollectorPolicy = .default,
          enableRawCapture: Bool = false,
+         rawCaptureEnabled: @escaping () -> Bool = { false },
          log: ((String) -> Void)? = nil,
          now: @escaping () -> Int = { Int(Date().timeIntervalSince1970) },
          monotonic: @escaping () -> TimeInterval = { Date().timeIntervalSinceReferenceDate }) {
         self.store = store; self.deviceId = deviceId; self.policy = policy
         self.enableRawCapture = enableRawCapture
+        self.rawCaptureEnabled = rawCaptureEnabled
         self.log = log
         self.now = now; self.monotonic = monotonic
         self.batchStartedAt = monotonic()
@@ -222,7 +227,7 @@ final class Collector {
         batchStartedAt = monotonic()
         // RAW SECOND (transient outbox), only when the research toggle is ON. Default OFF →
         // decoded-only, no raw is stored. Failure is non-fatal — decoded is already durable.
-        guard enableRawCapture || rawCapture.isActive(at: monotonic()) else { return }
+        guard enableRawCapture || rawCaptureEnabled() || rawCapture.isActive(at: monotonic()) else { return }
         let wall = now()
         let tsValues = streams.hr.map(\.ts) + streams.rr.map(\.ts)
             + streams.events.map(\.ts) + streams.battery.map(\.ts)
