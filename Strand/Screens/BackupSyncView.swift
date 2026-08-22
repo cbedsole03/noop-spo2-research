@@ -20,6 +20,7 @@ struct BackupSyncView: View {
     @State private var serverArchiveLastMs = ServerArchiveSync.lastSuccessMs
     @State private var serverArchiveStatus = ServerArchiveSync.lastStatus
     @State private var serverArchiveBusy = false
+    @State private var rawResearchCapture = UserDefaults.standard.bool(forKey: "enableRawCapture")
 
     // Result alert (backup outcome / restore outcome).
     @State private var alertTitle = ""
@@ -180,7 +181,7 @@ struct BackupSyncView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Server archive")
                             .font(StrandFont.headline).foregroundStyle(StrandPalette.textPrimary)
-                        Text("Uploads one full raw .noopbak database snapshot to your NOOP server per day, when you open the app. This is for your private server, not the public NOOP project.")
+                        Text("Sends a full local snapshot to your private NOOP server only when you tap the button below. It includes decoded health data, captured raw BLE batches, and preserved unmapped history frames for research.")
                             .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -227,13 +228,23 @@ struct BackupSyncView: View {
                     }
                 }
 
+                Toggle("Capture raw WHOOP data for research", isOn: $rawResearchCapture)
+                    .toggleStyle(.switch)
+                    .tint(StrandPalette.accent)
+                    .onChangeCompat(of: rawResearchCapture) { on in
+                        UserDefaults.standard.set(on, forKey: "enableRawCapture")
+                    }
+                Text("Off by default. Turn this on before the next strap sync to preserve direct BLE frames alongside normal local data. Raw capture stays on this phone until you manually send a snapshot; existing retention limits still protect phone storage.")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+
                 Text(serverArchiveLastMs > 0 ? "Last server upload: \(relativeTime(serverArchiveLastMs))" : "No server upload yet.")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                 Text(serverArchiveStatus)
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                NoopButton(serverArchiveBusy ? "Uploading…" : "Upload to server now",
+                NoopButton(serverArchiveBusy ? "Sending raw data…" : "Send raw data to server",
                            systemImage: "server.rack", kind: .primary, fullWidth: true) { uploadToServerNow() }
                     .disabled(serverArchiveBusy || !serverArchiveEnabled || !serverArchiveHasPassword)
             }

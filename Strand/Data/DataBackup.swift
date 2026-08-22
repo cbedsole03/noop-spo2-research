@@ -144,11 +144,13 @@ enum DataBackup {
     /// when the original data may be long gone; failing loudly NOW is the honest move. The read-only
     /// probe sits safely beside the app's open GRDB pool (WAL allows concurrent readers).
     /// `writeBackupForTesting` deliberately bypasses this so tests can build damaged containers.
-    private static func writeVerifiedBackupZip(dbURL: URL, to dest: URL, settingsJSON: Data?) throws {
+    private static func writeVerifiedBackupZip(dbURL: URL, to dest: URL, settingsJSON: Data?,
+                                               rawResearchSidecars: [(entryName: String, fileURL: URL)] = []) throws {
         if let complaint = DatabaseIntegrity.quickCheckFailure(atPath: dbURL.path) {
             throw ExportIntegrityFailure(complaint: complaint)
         }
-        try writeBackupZip(dbURL: dbURL, to: dest, settingsJSON: settingsJSON, manifestJSON: currentManifestJSON())
+        try writeBackupZip(dbURL: dbURL, to: dest, settingsJSON: settingsJSON,
+                           manifestJSON: currentManifestJSON(), rawResearchSidecars: rawResearchSidecars)
         // #1014 (write-side): the SOURCE is verified above, but the PRODUCED file can still be torn by a
         // full disk / dying filesystem / flaky cloud-sync mid-write, and such a truncated `.noopbak`
         // otherwise "restores" into an empty store — caught only by the import-side quick_check much later.
@@ -182,7 +184,8 @@ enum DataBackup {
         return Data(json.utf8)
     }
 
-    private static func writeBackupZip(dbURL: URL, to dest: URL, settingsJSON: Data?, manifestJSON: Data) throws {
+    private static func writeBackupZip(dbURL: URL, to dest: URL, settingsJSON: Data?, manifestJSON: Data,
+                                       rawResearchSidecars: [(entryName: String, fileURL: URL)] = []) throws {
         let archive = try Archive(url: dest, accessMode: .create)
         try archive.addEntry(with: backupEntryName, fileURL: dbURL, compressionMethod: .deflate)
         let fm = FileManager.default
@@ -194,6 +197,12 @@ enum DataBackup {
             try settingsJSON.write(to: tmpJSON)
             defer { try? fm.removeItem(at: tmpJSON) }
             try archive.addEntry(with: BackupSettings.entryName, fileURL: tmpJSON, compressionMethod: .deflate)
+        }
+        // Raw records that are intentionally held outside SQLite are included only in a deliberate
+        // private-server research snapshot. A sidecar can rotate while this ZIP is written, so an absent
+        // optional file must never invalidate the verified database backup.
+        for sidecar in rawResearchSidecars where fm.fileExists(atPath: sidecar.fileURL.path) {
+            try? archive.addEntry(with: sidecar.entryName, fileURL: sidecar.fileURL, compressionMethod: .deflate)
         }
         // #1410: manifest LAST (after the DB + optional settings) and ALWAYS written — even a legacy
         // nil-settings backup states which build produced it.
@@ -228,7 +237,8 @@ enum DataBackup {
     /// deflate ZIP via the same `writeBackupZip` the interactive export uses, so folder / auto backups
     /// are byte-identical to a manual export. The CALLER owns any security-scoped access to `dest`
     /// (start/stop around this call). Never presents UI, so it is safe off the main actor.
-    static func writeBackup(checkpoint: @escaping () async -> Bool, to dest: URL) async -> BackupResult {
+    static func writeBackup(checkpoint: @escaping () async -> Bool, to dest: URL,
+                            includeRawResearchArchive: Bool = false) async -> BackupResult {
         let dbPath: String
         do { dbPath = try StorePaths.defaultDatabasePath() }
         catch { return .failure(String(localized: "Couldn't locate the NOOP database. \(error.localizedDescription)")) }
@@ -245,11 +255,29 @@ enum DataBackup {
         do {
             let fm = FileManager.default
             if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
-            try writeVerifiedBackupZip(dbURL: dbURL, to: dest, settingsJSON: currentSettingsJSON())
+            try writeVerifiedBackupZip(
+                dbURL: dbURL,
+                to: dest,
+                settingsJSON: currentSettingsJSON(),
+                rawResearchSidecars: includeRawResearchArchive ? rawResearchSidecars() : []
+            )
             return .exported(dest)
         } catch {
             return .failure(String(localized: "Backup failed: \(error.localizedDescription)"))
         }
+    }
+
+    /// The only raw historical records that do not live in SQLite. They are capped by
+    /// `RawHistoryArchive` and added only to deliberate private-server research snapshots.
+    private static func rawResearchSidecars() -> [(entryName: String, fileURL: URL)] {
+        let fm = FileManager.default
+        guard let support = try? fm.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                                        appropriateFor: nil, create: false) else { return [] }
+        let rejected = support
+            .appendingPathComponent("com.noopapp.noop", isDirectory: true)
+            .appendingPathComponent(RawHistoryArchive.fileName)
+        guard fm.fileExists(atPath: rejected.path) else { return [] }
+        return [(entryName: "research/\(RawHistoryArchive.fileName)", fileURL: rejected)]
     }
 
     /// Test seam: write a `.noopbak` for an EXPLICIT source database (no checkpoint, no `StorePaths`),

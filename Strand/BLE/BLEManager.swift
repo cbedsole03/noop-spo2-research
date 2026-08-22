@@ -1174,11 +1174,11 @@ public final class BLEManager: NSObject, ObservableObject {
         // the `deviceRowForTest` helper), so this is dormant, but still wrong data on disk.
         let registeredName = (try? registry.all())?.first(where: { $0.id == deviceId })?.displayName
         try? await store.upsertDevice(id: deviceId, mac: nil, name: registeredName)
-        // Research toggle — OFF by default. When disabled the app is decoded-only and never
-        // persists raw frames. Flip "enableRawCapture" in UserDefaults to capture raw again.
-        let enableRawCapture = UserDefaults.standard.bool(forKey: "enableRawCapture")
+        // Research toggle — OFF by default. It is read for each completed batch so the Backup &
+        // Sync research switch can start/stop capture without recreating the BLE pipeline.
+        let rawCaptureEnabled = { UserDefaults.standard.bool(forKey: "enableRawCapture") }
         collector = Collector(store: store, deviceId: deviceId,
-                              enableRawCapture: enableRawCapture)
+                              rawCaptureEnabled: rawCaptureEnabled)
         // The store can finish bootstrapping AFTER connect(model:) already ran (both wait on
         // poweredOn), so apply the family/clock configuration here too — whichever runs last wins.
         configureCollectorFamily()
@@ -1186,7 +1186,7 @@ public final class BLEManager: NSObject, ObservableObject {
                                 ackTrim: { [weak self] trim, endData in
                                     self?.ackHistoricalChunk(trim: trim, endData: endData)
                                 },
-                                enableRawCapture: enableRawCapture,
+                                rawCaptureEnabled: rawCaptureEnabled,
                                 log: { [weak self] s in self?.log(s) },
                                 rejectedSink: { [weak self] frames, trim, family in
                                     self?.archiveRejectedFrames(frames, trim: trim, family: family) ?? true
