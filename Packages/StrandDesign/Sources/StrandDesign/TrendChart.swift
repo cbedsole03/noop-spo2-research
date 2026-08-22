@@ -299,12 +299,12 @@ public struct TrendChart: View {
                 AxisValueLabel {
                     if let date = value.as(Date.self) {
                         Text(xAxisDateString(date))
+                            .foregroundStyle(StrandPalette.textTertiary)
+                            .font(StrandFont.footnote)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                     }
                 }
-                .foregroundStyle(StrandPalette.textTertiary)
-                .font(StrandFont.footnote)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
             }
         }
         .chartYAxis {
