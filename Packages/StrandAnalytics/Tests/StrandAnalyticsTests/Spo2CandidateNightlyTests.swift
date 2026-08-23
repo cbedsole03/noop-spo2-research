@@ -72,4 +72,16 @@ final class Spo2CandidateNightlyTests: XCTestCase {
         XCTAssertNil(AnalyticsEngine.nightlySpo2CandidateMean(
             [session(1000, 600)], aux: [aux(1100, 69), aux(1200, 101)]))
     }
+
+    func testWhoop4V12CandidateUsesInBandSleepRowsAndRoundsMean() {
+        let result = AnalyticsEngine.nightlyWhoop4Spo2CandidateMean(
+            [session(1000, 600)],
+            spo2: [SpO2Sample(ts: 1100, red: 1, ir: 2, auxByte85: 94),
+                   SpO2Sample(ts: 1200, red: 1, ir: 2, auxByte85: 96),
+                   SpO2Sample(ts: 1300, red: 1, ir: 2, auxByte85: 97),
+                   SpO2Sample(ts: 1400, red: 1, ir: 2, auxByte85: 3),
+                   SpO2Sample(ts: 9000, red: 1, ir: 2, auxByte85: 100)])
+        XCTAssertEqual(result?.mean, 96)
+        XCTAssertEqual(result?.samples, 3)
+    }
 }

@@ -62,9 +62,9 @@ struct SettingsView: View {
     /// See [PuffinExperiment.ecgRawDataKey].
     @AppStorage(PuffinExperiment.ecgRawDataKey) private var ecgRawDataEnabled = false
 
-    /// #103 opt-in: surfaces the WHOOP 5/MG `spo2_candidate_82` nightly mean in the Blood Oxygen tile
-    /// as a "strap estimate (unverified)" fallback when no calibrated `spo2Pct` exists. Display-only —
-    /// writes nothing to the strap. See [PuffinExperiment.spo2CandidateDisplayKey].
+    /// #103 opt-in: surfaces a firmware-specific candidate (WHOOP 4.0 v12 @85 or 5/MG v18 @82) in the
+    /// Blood Oxygen tile as a "strap estimate (unverified)" fallback. Display-only; writes nothing to
+    /// the strap. See [PuffinExperiment.spo2CandidateDisplayKey].
     @AppStorage(PuffinExperiment.spo2CandidateDisplayKey) private var spo2CandidateDisplayEnabled = false
 
     /// #463 opt-in: score the intraday stress timeline against a PERSONAL cross-day baseline
@@ -1977,24 +1977,24 @@ struct SettingsView: View {
                     .accessibilityElement(children: .combine)
                 }
 
-                // MARK: #103 SpO₂ strap estimate display — surface the @82 candidate as a fallback.
+                // MARK: #103 SpO₂ strap estimate display — surface the firmware-specific candidate.
                 Divider().overlay(StrandPalette.hairline)
 
                 Toggle(isOn: $spo2CandidateDisplayEnabled) {
-                    Text("Blood Oxygen: strap estimate (WHOOP 5/MG)")
+                    Text("Blood Oxygen: strap estimate")
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
                 .toggleStyle(.switch)
                 .tint(StrandPalette.accent)
                 .onChangeCompat(of: spo2CandidateDisplayEnabled) { _ in
-                    // Re-score immediately so the @82 candidate is computed and persisted on this
+                    // Re-score immediately so the strap candidate is computed and persisted on this
                     // toggle flip — without this the user waits up to 15 min for the next analyze
                     // loop, and the Blood Oxygen tile stays blank in the meantime. Same pattern as
                     // the HRV window toggle above (analyzeRecent → refresh).
                     Task { await model.intelligence.analyzeRecent(); await model.repo.refresh() }
                 }
-                Text("Your WHOOP 5.0/MG sends a strap-computed SpO₂ percentage (the @82 candidate byte) every second. An 8-night independent validation tracked it at corr +0.99 against the WHOOP app, but two nights on the original test device moved the OPPOSITE direction — device/firmware variance is unresolved. Turning this on surfaces the nightly mean in the Blood Oxygen tile as \"strap estimate (unverified)\" when no calibrated import exists. It never feeds recovery or illness scoring. WHOOP 4.0 has no @82 stream, so this does nothing there.")
+                Text("Your WHOOP records a sleep-only oxygen candidate (WHOOP 4.0 v12 @85; WHOOP 5/MG v18 @82). These fields look like strap-computed percentages, but device and firmware validation is incomplete. Turning this on surfaces the nightly mean as \"strap estimate (unverified)\" when no calibrated import exists. It never feeds recovery or illness scoring.")
                     .font(StrandFont.caption)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)

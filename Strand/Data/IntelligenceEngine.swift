@@ -152,9 +152,9 @@ final class IntelligenceEngine: ObservableObject {
         /// where `rr` is in scope and replayed through `diagnosticSink` in pass 2 (which is main-actor
         /// isolated). nil when the night has no in-sleep R-R.
         let hrvDiag: String?
-        /// #103: the nightly `spo2_candidate_82` mean for this day, computed off the main actor from the
-        /// V18AuxSample stream when the SpO₂ candidate display toggle is ON. nil when the toggle is OFF,
-        /// the night has no in-band @82 readings, or the owner is a WHOOP 4.0 (no v18 aux stream).
+        /// #103: the nightly strap SpO₂ candidate mean for this day, computed off the main actor from
+        /// WHOOP 4.0 v12 @85 or WHOOP 5/MG v18 @82 when the display toggle is ON. nil when the toggle is
+        /// OFF or the night has no in-band readings for its firmware layout.
         /// Written to metricSeries as "spo2_candidate" under the "-noop" device ID in pass 2.
         let spo2Candidate: Int?
         /// #1118: whether this night's in-sleep R-R is OVER-COUNTED (`crossSecondOverCount` /
@@ -1181,18 +1181,22 @@ final class IntelligenceEngine: ObservableObject {
                 // #1331 respiratory diagnostic — a run of nil nights localises when it stopped. Same
                 // pure-compute-here / replay-on-main-actor path as rhrLine.
                 let respLine: String? = Self.respRateLogLine(day: res.daily.day, respRateBpm: res.daily.respRateBpm)
-                // #103: SpO₂ candidate @82 nightly mean. Only computed when the display toggle is ON.
-                // Reads the V18AuxSample stream for this night's owner and averages the in-band (70–100)
-                // @82 readings that fall inside a detected sleep session. nil on a WHOOP 4.0 (no v18 aux
-                // stream), a night with no in-band readings, or when the toggle is OFF. The mean is
+                // #103: firmware-specific SpO₂ candidate nightly mean, only when the display toggle is ON.
+                // WHOOP 4.0 reads v12 @85 from the optical stream; WHOOP 5/MG reads v18 @82 from its aux
+                // stream. Both average only in-band (70–100) values inside a detected sleep session.
+                // nil when neither layout has readings or when the toggle is OFF. The mean is
                 // written to metricSeries as "spo2_candidate" in pass 2, never to `spo2Pct` — the guard
                 // test `testHistoricalV18OpticalFieldsAreNotNamedPhysiologically` enforces that boundary.
                 var spo2CandidateMean: Int? = nil
                 if spo2CandidateDisplayOn {
-                    let auxSamples = (try? await store.v18AuxSamples(
-                        deviceId: owner, from: from, to: to, limit: 200_000)) ?? []
-                    if !auxSamples.isEmpty {
-                        if let cand = AnalyticsEngine.nightlySpo2CandidateMean(res.sleepSessions, aux: auxSamples) {
+                    if let cand = AnalyticsEngine.nightlyWhoop4Spo2CandidateMean(
+                        res.sleepSessions, spo2: spo2) {
+                        spo2CandidateMean = cand.mean
+                    } else {
+                        let auxSamples = (try? await store.v18AuxSamples(
+                            deviceId: owner, from: from, to: to, limit: 200_000)) ?? []
+                        if let cand = AnalyticsEngine.nightlySpo2CandidateMean(
+                            res.sleepSessions, aux: auxSamples) {
                             spo2CandidateMean = cand.mean
                         }
                     }
@@ -1241,7 +1245,7 @@ final class IntelligenceEngine: ObservableObject {
         // visible in every export.
         var readOwnerByDay: [String: (owner: String, hrRows: Int)] = [:]
         var resolvedScoreOwnerByDay: [String: String] = [:]
-        // #103: SpO₂ candidate @82 nightly mean per day, carried from pass 1 for metricSeries persistence.
+        // #103: firmware-specific SpO₂ candidate mean, carried from pass 1 for metricSeries persistence.
         var spo2CandidateByDay: [String: Int] = [:]
         // #1118: per-day HRV over-count flag, carried from pass 1 for metricSeries persistence. nil (absent)
         // for a night with no in-sleep R-R; otherwise true/false, so a re-score always overwrites the row.
@@ -1262,8 +1266,8 @@ final class IntelligenceEngine: ObservableObject {
             nightlyRhrByDay[res.daily.day] = res.daily.restingHr.map(Double.init)
             nightlyRespByDay[res.daily.day] = res.daily.respRateBpm
             nightlySkinByDay[res.daily.day] = res.nightlySkinTempC
-            // #103: carry the SpO₂ candidate @82 nightly mean into pass 2 for metricSeries persistence.
-            // nil when the toggle is OFF or the night had no in-band @82 readings.
+            // #103: carry the firmware-specific candidate into pass 2 for metricSeries persistence.
+            // nil when the toggle is OFF or the night had no in-band readings.
             if let cand = scan.spo2Candidate {
                 spo2CandidateByDay[res.daily.day] = cand
             }
@@ -1552,7 +1556,7 @@ final class IntelligenceEngine: ObservableObject {
             if let rest = AnalyticsEngine.Rest.composite(daily: daily) {
                 restPoints.append(MetricPoint(day: daily.day, key: "sleep_performance", value: rest))
             }
-            // #103: persist the SpO₂ candidate @82 nightly mean to metricSeries as "spo2_candidate" so the
+            // #103: persist the firmware-specific candidate as "spo2_candidate" so the
             // Blood Oxygen tile can surface it as a "strap estimate (unverified)" fallback when the toggle
             // is ON. Written under the "-noop" computed device ID, never to `spo2Pct` — the candidate has
             // split cross-device evidence and stays behind the experimental display toggle.

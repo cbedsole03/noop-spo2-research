@@ -266,7 +266,14 @@ public func extractHistoricalStreams(_ parsed: [ParsedFrame],
                 for rr in rrs { out.rr.append(RRInterval(ts: ts, rrMs: rr)) }
             }
             if let red = p["spo2_red"]?.intValue {
-                out.spo2.append(SpO2Sample(ts: ts, red: red, ir: p["spo2_ir"]?.intValue ?? 0))
+                let state = p["whoop4_sleep_state_byte"]?.intValue ?? 0
+                let raw85 = p["aux_byte_85"]?.intValue
+                let raw86 = p["aux_byte_86"]?.intValue
+                let measurementActive = state >> 4 == 2
+                    && ((raw85 ?? 0) != 0 || (raw86 ?? 0) != 0)
+                out.spo2.append(SpO2Sample(ts: ts, red: red, ir: p["spo2_ir"]?.intValue ?? 0,
+                                           auxByte85: measurementActive ? raw85 : nil,
+                                           auxByte86: measurementActive ? raw86 : nil))
             }
             // The two AUXILIARY thermal channels (`temp_aux_1_raw@69` / `temp_aux_2_raw@71`, i16, °C =
             // value/10) ride the primary skin-temp row for the same second. Both were decoded and dropped

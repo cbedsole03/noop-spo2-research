@@ -52,14 +52,14 @@ enum PuffinExperiment {
 
     static var ecgRawDataEnabled: Bool { UserDefaults.standard.bool(forKey: ecgRawDataKey) }
 
-    /// Opt-in "SpO₂ strap estimate" display (#103): surfaces the WHOOP 5/MG `spo2_candidate_82` nightly
-    /// mean in the Blood Oxygen tile/card, labelled "strap estimate (unverified)". The @82 byte is a
-    /// strap-computed SpO₂ % (70–100 range) that an 8-night independent validation tracked at corr +0.99
-    /// against the WHOOP app, but two nights on the original #103 device moved OPPOSITE — device/firmware
-    /// variance unresolved. Per the derived-biosignal rule (CLAUDE.md), an unvalidated signal ships behind
-    /// a default-off toggle, never as the default `spo2Pct` and never feeding a downstream gate.
+    /// Opt-in "SpO₂ strap estimate" display (#103): surfaces the firmware-specific nightly candidate
+    /// (WHOOP 4.0 v12 @85 or WHOOP 5/MG v18 @82) in the Blood Oxygen tile/card, labelled "strap estimate
+    /// (unverified)". Both bytes look like strap-computed SpO₂ percentages in the 70–100 range, but
+    /// device and firmware validation is incomplete. Per the derived-biosignal rule (CLAUDE.md), an
+    /// unvalidated signal ships behind a default-off toggle, never as the default `spo2Pct` and never
+    /// feeding a downstream gate.
     ///
-    /// Display-only: writes nothing to the strap. The engine computes `nightlySpo2CandidateMean` and
+    /// Display-only: writes nothing to the strap. The engine computes the matching candidate mean and
     /// writes it to metricSeries as "spo2_candidate" under the "-noop" computed device ID; the UI reads
     /// it only while this toggle is ON. Mirrors the Android `NoopPrefs.KEY_SPO2_CANDIDATE_DISPLAY`.
     static let spo2CandidateDisplayKey = "noopSpo2CandidateDisplay"

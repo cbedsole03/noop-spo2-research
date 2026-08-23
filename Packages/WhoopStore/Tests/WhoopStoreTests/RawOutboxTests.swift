@@ -84,4 +84,50 @@ final class RawOutboxTests: XCTestCase {
         let gotZeros = try await store.rawFrames(batchId: "z")
         XCTAssertEqual(gotZeros, zeros)
     }
+
+    func testWhoop4Spo2CandidateBackfillEnrichesExistingRowAndIsIdempotent() async throws {
+        let hex =
+            "aa5a008e2f18000000000000f153650000000000003f0152030000000000000000dc053075" +
+            "000000cdcc4c3dcdcccc3d5a657e3f00000040cdcc4c3dcdcccc3d5a657e3f504668428403" +
+            "200364006400b80bb80b000000000000c25c1a88"
+        var frame: [UInt8] = stride(from: 0, to: hex.count, by: 2).map { offset in
+            let start = hex.index(hex.startIndex, offsetBy: offset)
+            let end = hex.index(start, offsetBy: 2)
+            return UInt8(hex[start..<end], radix: 16)!
+        }
+        frame[5] = 12
+        frame[84] = 0x20
+        frame[85] = 96
+        frame[86] = 98
+        let length = Int(frame[1]) | (Int(frame[2]) << 8)
+        let checksum = crc32(frame, 4, length)
+        frame[length] = UInt8(checksum & 0xff)
+        frame[length + 1] = UInt8((checksum >> 8) & 0xff)
+        frame[length + 2] = UInt8((checksum >> 16) & 0xff)
+        frame[length + 3] = UInt8((checksum >> 24) & 0xff)
+
+        let store = try await WhoopStore.inMemory()
+        try await store.upsertDevice(id: "dev1", mac: nil, name: nil)
+        _ = try await store.insert(
+            Streams(spo2: [SpO2Sample(ts: 1_700_000_000, red: 18_000, ir: 17_000)]),
+            deviceId: "dev1")
+        let batch = RawBatchMeta(
+            batchId: "whoop4-v12", deviceId: "dev1",
+            clockRef: ClockRef(device: 0, wall: 0), capturedAt: 1_700_000_001,
+            startTs: 1_700_000_000, endTs: 1_700_000_000,
+            frameCount: 1, byteSize: frame.count)
+        try await store.enqueueRawBatch(batch, frames: [frame])
+
+        let firstChanged = try await store.backfillWhoop4Spo2CandidatesFromRawBatches()
+        XCTAssertEqual(firstChanged, 1)
+        let rows = try await store.spo2Samples(
+            deviceId: "dev1", from: 1_700_000_000, to: 1_700_000_000, limit: 1)
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows[0].red, 18_000)
+        XCTAssertEqual(rows[0].ir, 17_000)
+        XCTAssertEqual(rows[0].auxByte85, 96)
+        XCTAssertEqual(rows[0].auxByte86, 98)
+        let secondChanged = try await store.backfillWhoop4Spo2CandidatesFromRawBatches()
+        XCTAssertEqual(secondChanged, 0)
+    }
 }

@@ -868,6 +868,21 @@ extension WhoopStore {
                 t.primaryKey(["deviceId", "ts"])
             }
         }
+        // v39: preserve the WHOOP 4.0 v12 @85 sleep-window byte beside the raw optical row.
+        // Nullable and additive: existing rows and every non-v12 source remain NULL. This is raw
+        // instrumentation for the opt-in research display, never calibrated `spo2Pct`.
+        migrator.registerMigration("v39-whoop4-spo2-candidate") { db in
+            try db.alter(table: "spo2Sample") { t in
+                t.add(column: "auxByte85", .integer)
+            }
+        }
+        // v40: preserve WHOOP 4.0 v12 @86 beside @85. Kept separate because captures show @86
+        // multiplexing percentage-like values and status codes; neither field is a confirmed SpO2 %.
+        migrator.registerMigration("v40-whoop4-spo2-byte86") { db in
+            try db.alter(table: "spo2Sample") { t in
+                t.add(column: "auxByte86", .integer)
+            }
+        }
         return migrator
     }
 }

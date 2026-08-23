@@ -230,11 +230,17 @@ extension WhoopStore {
             }
             if !streams.spo2.isEmpty {
                 let stmt = try db.cachedStatement(sql: """
-                    INSERT INTO spo2Sample (deviceId, ts, red, ir) VALUES (?, ?, ?, ?)
-                    ON CONFLICT(deviceId, ts) DO NOTHING
+                    INSERT INTO spo2Sample (deviceId, ts, red, ir, auxByte85, auxByte86)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(deviceId, ts) DO UPDATE SET
+                        auxByte85 = COALESCE(spo2Sample.auxByte85, excluded.auxByte85),
+                        auxByte86 = COALESCE(spo2Sample.auxByte86, excluded.auxByte86)
+                    WHERE (spo2Sample.auxByte85 IS NULL AND excluded.auxByte85 IS NOT NULL)
+                       OR (spo2Sample.auxByte86 IS NULL AND excluded.auxByte86 IS NOT NULL)
                     """)
                 for s in streams.spo2 {
-                    try stmt.execute(arguments: [deviceId, s.ts, s.red, s.ir])
+                    try stmt.execute(arguments: [deviceId, s.ts, s.red, s.ir,
+                                                 s.auxByte85, s.auxByte86])
                     spo2 += db.changesCount
                 }
             }

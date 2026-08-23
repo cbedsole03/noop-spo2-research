@@ -9,7 +9,7 @@ final class BiometricStreamTests: XCTestCase {
     private func bioStreams() -> Streams {
         Streams(
             hr: [HRSample(ts: 1700000000, bpm: 63)],
-            spo2: [SpO2Sample(ts: 1700000000, red: 18000, ir: 17000)],
+            spo2: [SpO2Sample(ts: 1700000000, red: 18000, ir: 17000, auxByte85: 96, auxByte86: 98)],
             skinTemp: [SkinTempSample(ts: 1700000000, raw: 900)],
             resp: [RespSample(ts: 1700000000, raw: 3000)],
             gravity: [GravitySample(ts: 1700000000, x: 0.05, y: 0.10, z: 0.993734)])
@@ -95,7 +95,7 @@ final class BiometricStreamTests: XCTestCase {
 
         let from = 0, to = 2_000_000_000, lim = 100
         let spo2 = try await store.spo2Samples(deviceId: "dev1", from: from, to: to, limit: lim)
-        XCTAssertEqual(spo2, [SpO2Sample(ts: 1700000000, red: 18000, ir: 17000)])
+        XCTAssertEqual(spo2, [SpO2Sample(ts: 1700000000, red: 18000, ir: 17000, auxByte85: 96, auxByte86: 98)])
 
         let skin = try await store.skinTempSamples(deviceId: "dev1", from: from, to: to, limit: lim)
         XCTAssertEqual(skin, [SkinTempSample(ts: 1700000000, raw: 900)])
@@ -105,6 +105,25 @@ final class BiometricStreamTests: XCTestCase {
 
         let grav = try await store.gravitySamples(deviceId: "dev1", from: from, to: to, limit: lim)
         XCTAssertEqual(grav, [GravitySample(ts: 1700000000, x: 0.05, y: 0.10, z: 0.993734)])
+    }
+
+    func testLatestWhoop4Spo2ResearchSampleIsDeviceScopedAndAcceptsEitherByte() async throws {
+        let store = try await WhoopStore.inMemory()
+        try await store.upsertDevice(id: "dev1", mac: nil, name: nil)
+        try await store.upsertDevice(id: "other", mac: nil, name: nil)
+        _ = try await store.insert(
+            Streams(spo2: [SpO2Sample(ts: 100, red: 1, ir: 2, auxByte85: 94, auxByte86: 2),
+                           SpO2Sample(ts: 200, red: 3, ir: 4),
+                           SpO2Sample(ts: 300, red: 5, ir: 6, auxByte86: 97)]),
+            deviceId: "dev1")
+        _ = try await store.insert(
+            Streams(spo2: [SpO2Sample(ts: 1_000, red: 7, ir: 8, auxByte85: 99, auxByte86: 100)]),
+            deviceId: "other")
+
+        let latest = try await store.latestWhoop4Spo2ResearchSample(deviceId: "dev1")
+        XCTAssertEqual(latest, SpO2Sample(ts: 300, red: 5, ir: 6, auxByte86: 97))
+        let missing = try await store.latestWhoop4Spo2ResearchSample(deviceId: "missing")
+        XCTAssertNil(missing)
     }
 
     func testBiometricReadsRespectRangeAndScope() async throws {

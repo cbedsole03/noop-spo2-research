@@ -3543,14 +3543,14 @@ struct TodayView: View {
             let spo2 = carriedVital(unit: "SpO₂", today: d?.spo2Pct,
                                     prior: { $0.spo2Pct }, perField: lastSpo2Day,
                                     format: { String(format: "%.0f%%", $0) })
-            // #103: SpO₂ candidate @82 fallback. When spo2Pct is nil (WHOOP 5/MG BLE-only, no import) AND
-            // the experimental toggle is ON, surface the strap's own @82 nightly mean as a "strap estimate
+            // #103: firmware-specific SpO₂ candidate fallback. When spo2Pct is nil and the experimental
+            // toggle is ON, surface the strap's own nightly mean as a "strap estimate
             // (unverified)" so the tile shows a number instead of "—". The candidate has split cross-device
             // evidence (corr +0.99 on 8 nights, but 2 nights moved opposite on the original device), so it
             // ships behind a default-off toggle and is never written to `spo2Pct` (CLAUDE.md derived-
             // biosignal rule). The sparkline switches to the candidate trend when the fallback is active.
-            // When the toggle is ON but NO candidate data exists (empty @82 stream, WHOOP 4.0, or the
-            // engine hasn't re-scored yet), show "toggle ON · no @82 data" so the user can tell the
+            // When the toggle is ON but NO candidate data exists, show an explicit empty state so the
+            // user can tell the
             // difference between "toggle off" and "toggle on but no data" — a silent blank reads as broken.
             let spo2CandidateOn = PuffinExperiment.spo2CandidateDisplayEnabled
             let candidateTail = spo2CandidateOn ? sparks["spo2_candidate"]?.last : nil
@@ -3560,7 +3560,7 @@ struct TodayView: View {
             let spo2Caption: String = spo2.value == "—" && candidateTail != nil
                 ? String(localized: "strap estimate (unverified)")
                 : (spo2.value == "—" && spo2CandidateOn
-                   ? String(localized: "toggle ON · no @82 data")
+                   ? String(localized: "toggle ON · no strap estimate data")
                    : (spo2.caption ?? ""))
             StatTile(
                 label: "Blood Oxygen",
@@ -4005,10 +4005,10 @@ struct TodayView: View {
         async let hrvSpark           = sparkValues("hrv", source: "my-whoop", window: 14)
         async let rhrSpark           = sparkValues("rhr", source: "my-whoop", window: 14)
         async let spo2Spark          = sparkValues("spo2", source: "my-whoop", window: 14)
-        // #103: SpO₂ candidate @82 nightly mean (WHOOP 5/MG only). Read via `exploreSeries` so the
-        // computed "-noop" metricSeries backs the trend. Empty when the toggle is OFF (the engine
-        // writes nothing) or on a WHOOP 4.0 (no v18 aux stream). Used as a fallback for the Blood
-        // Oxygen tile when `spo2Pct` is nil, labelled "strap estimate (unverified)".
+        // #103: firmware-specific SpO₂ candidate nightly mean. Read via `exploreSeries` so the computed
+        // "-noop" metricSeries backs the trend. Empty when the toggle is OFF (the engine writes nothing)
+        // or no in-band candidate was captured. Used as a fallback for the Blood Oxygen tile when
+        // `spo2Pct` is nil, labelled "strap estimate (unverified)".
         async let spo2CandidateSpark = sparkValuesExplore("spo2_candidate", source: "my-whoop", window: 14)
         // `resp_rate` via `exploreSeries` so a BLE-only WHOOP 5 user's on-device computed
         // `DailyMetric.respRateBpm` backs the trend (the engine writes the column, not a metricSeries

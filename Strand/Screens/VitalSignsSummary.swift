@@ -161,10 +161,10 @@ enum BodyVitalSigns {
 
         let respPoints = points(key: "resp", \.respRateBpm)
         let spo2Points = points(key: "spo2", \.spo2Pct)
-        // #103: SpO₂ candidate @82 (WHOOP 5/MG only). When no calibrated spo2Pct exists AND the toggle is
-        // ON, the candidate mean is passed in from metricSeries as a fallback. It has split cross-device
-        // evidence and ships behind a default-off toggle, never as `spo2Pct` (CLAUDE.md derived-biosignal
-        // rule). Built into VitalPoints so the tile + sparkline + `latest()` resolve it the same way.
+        // #103: firmware-specific SpO₂ candidate. When no calibrated spo2Pct exists and the toggle is ON,
+        // the candidate mean is passed in from metricSeries as a fallback. It has incomplete validation and
+        // ships behind a default-off toggle, never as `spo2Pct` (CLAUDE.md derived-biosignal rule). Built
+        // into VitalPoints so the tile + sparkline + `latest()` resolve it the same way.
         let spo2CandidateOn = PuffinExperiment.spo2CandidateDisplayEnabled && !spo2CandidateByDay.isEmpty
         let spo2CandidatePoints: [VitalPoint] = spo2CandidateOn
             ? spo2CandidateByDay.map { (day, value) in
@@ -182,7 +182,7 @@ enum BodyVitalSigns {
         let skinPoints = points(key: "skin", \.skinTempDevC)
 
         let respRow = latest(respPoints)
-        // #103: fall back to the spo2_candidate @82 mean when no calibrated spo2Pct exists. The candidate
+        // #103: fall back to the firmware-specific candidate mean when no calibrated spo2Pct exists. It
         // is labelled "strap estimate (unverified)" in the tile caption so it is never read as a calibrated
         // blood-oxygen percentage.
         let spo2Row = latest(spo2Points) ?? latest(spo2CandidatePoints)
@@ -288,7 +288,7 @@ enum BodyVitalSigns {
                 missingCaption: spo2IsCandidate
                     ? String(localized: "strap estimate (unverified)")
                     : (PuffinExperiment.spo2CandidateDisplayEnabled && spo2Row == nil
-                       ? String(localized: "toggle ON · no @82 data")
+                       ? String(localized: "toggle ON · no strap estimate data")
                        : (spo2rawRow != nil
                           ? String(localized: "Raw counts only — needs an import")
                           : String(localized: "No SpO₂ import or Health value"))),

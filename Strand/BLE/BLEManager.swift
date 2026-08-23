@@ -1224,6 +1224,22 @@ public final class BLEManager: NSObject, ObservableObject {
             }
         }
 
+        // The @85/@86 pair was decoded only after existing WHOOP 4.0 v12 nights had already landed in
+        // spo2Sample. V2 deliberately re-runs for research installs that completed the earlier @85-only
+        // replay. Future offloads populate both raw bytes during normal decode.
+        let spo2BackfillKey = "whoop4Spo2CandidateRawBackfillV2"
+        if !UserDefaults.standard.bool(forKey: spo2BackfillKey) {
+            do {
+                let rows = try await store.backfillWhoop4Spo2CandidatesFromRawBatches()
+                if rows > 0 {
+                    log("Backfill: recovered \(rows) WHOOP 4.0 optical-candidate record(s) from local raw data.")
+                }
+                UserDefaults.standard.set(true, forKey: spo2BackfillKey)
+            } catch {
+                log("Backfill: WHOOP 4.0 optical-candidate replay deferred — will retry next launch.")
+            }
+        }
+
         // Battery "~X days left" seed (#7): `LiveState.batterySamples` is fed ONLY by live BLE events, so
         // after a reconnect the runtime estimate restarted from an empty buffer and ignored the discharge
         // history already on disk (Android seeds from its persisted battery table over a 14-day window;

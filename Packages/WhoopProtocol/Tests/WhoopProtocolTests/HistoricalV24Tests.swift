@@ -18,6 +18,21 @@ final class HistoricalV24Tests: XCTestCase {
         return out
     }
 
+    private func v12(candidate: UInt8, secondary: UInt8 = 98, state: UInt8 = 0x20) -> [UInt8] {
+        var frame = bytes(v24Hex)
+        frame[5] = 12
+        frame[84] = state
+        frame[85] = candidate
+        frame[86] = secondary
+        let length = Int(frame[1]) | (Int(frame[2]) << 8)
+        let crc = crc32(frame, 4, length)
+        frame[length] = UInt8(crc & 0xff)
+        frame[length + 1] = UInt8((crc >> 8) & 0xff)
+        frame[length + 2] = UInt8((crc >> 16) & 0xff)
+        frame[length + 3] = UInt8((crc >> 24) & 0xff)
+        return frame
+    }
+
     func testV24DecodesAsHistoricalData() {
         let out = parseFrame(bytes(v24Hex))
         XCTAssertTrue(out.ok)
@@ -67,6 +82,34 @@ final class HistoricalV24Tests: XCTestCase {
         let g = try! XCTUnwrap(st.gravity.first)
         XCTAssertEqual(g.ts, 1700000000)
         XCTAssertEqual(g.unit, "g")
+    }
+
+    func testV12CarriesRawSleepOnlyOpticalCandidatePair() {
+        let parsed = parseFrame(v12(candidate: 96)).parsed
+        XCTAssertEqual(parsed["whoop4_sleep_state_byte"]?.intValue, 0x20)
+        XCTAssertEqual(parsed["aux_byte_85"]?.intValue, 96)
+        XCTAssertEqual(parsed["aux_byte_86"]?.intValue, 98)
+        XCTAssertEqual(parsed["spo2_candidate_85"]?.intValue, 96)
+
+        let decoded = parseFrame(v12(candidate: 96))
+        let streams = extractHistoricalStreams([decoded], deviceClockRef: 0, wallClockRef: 0)
+        XCTAssertEqual(streams.spo2.first?.auxByte85, 96)
+        XCTAssertEqual(streams.spo2.first?.auxByte86, 98)
+
+        let outOfBand = parseFrame(v12(candidate: 3, secondary: 2))
+        XCTAssertNil(outOfBand.parsed["spo2_candidate_85"])
+        let rawStatus = extractHistoricalStreams(
+            [outOfBand], deviceClockRef: 0, wallClockRef: 0).spo2.first
+        XCTAssertEqual(rawStatus?.auxByte85, 3)
+        XCTAssertEqual(rawStatus?.auxByte86, 2)
+        let awake = parseFrame(v12(candidate: 96, state: 0x10))
+        XCTAssertNil(awake.parsed["spo2_candidate_85"])
+        let awakeSample = extractHistoricalStreams(
+            [awake], deviceClockRef: 0, wallClockRef: 0).spo2.first
+        XCTAssertNil(awakeSample?.auxByte85)
+        XCTAssertNil(awakeSample?.auxByte86)
+        XCTAssertNil(parseFrame(bytes(v24Hex)).parsed["aux_byte_85"])
+        XCTAssertNil(parseFrame(bytes(v24Hex)).parsed["aux_byte_86"])
     }
 
     func testUnmappedVersionFallsBackGracefully() {

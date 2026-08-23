@@ -261,11 +261,25 @@ extension WhoopStore {
     public func spo2Samples(deviceId: String, from: Int, to: Int, limit: Int) async throws -> [SpO2Sample] {
         try syncRead { db in
             try Row.fetchAll(db, sql: """
-                SELECT ts, red, ir FROM spo2Sample
+                SELECT ts, red, ir, auxByte85, auxByte86 FROM spo2Sample
                 WHERE deviceId = ? AND ts >= ? AND ts <= ?
                 ORDER BY ts ASC LIMIT ?
                 """, arguments: [deviceId, from, to, limit])
-                .map { SpO2Sample(ts: $0["ts"], red: $0["red"], ir: $0["ir"]) }
+                .map { SpO2Sample(ts: $0["ts"], red: $0["red"], ir: $0["ir"],
+                                  auxByte85: $0["auxByte85"], auxByte86: $0["auxByte86"]) }
+        }
+    }
+
+    /// Newest active WHOOP 4.0 v12 @85/@86 sleep-window record for the research comparator.
+    public func latestWhoop4Spo2ResearchSample(deviceId: String) async throws -> SpO2Sample? {
+        try syncRead { db in
+            try Row.fetchOne(db, sql: """
+                SELECT ts, red, ir, auxByte85, auxByte86 FROM spo2Sample
+                WHERE deviceId = ? AND (auxByte85 IS NOT NULL OR auxByte86 IS NOT NULL)
+                ORDER BY ts DESC LIMIT 1
+                """, arguments: [deviceId])
+                .map { SpO2Sample(ts: $0["ts"], red: $0["red"], ir: $0["ir"],
+                                  auxByte85: $0["auxByte85"], auxByte86: $0["auxByte86"]) }
         }
     }
 
