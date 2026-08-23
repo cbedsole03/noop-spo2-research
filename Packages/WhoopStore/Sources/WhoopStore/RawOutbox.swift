@@ -26,6 +26,20 @@ public struct RawBatchMeta: Equatable {
     }
 }
 
+private struct Whoop4Spo2CandidateKey: Hashable {
+    let deviceId: String
+    let ts: Int
+}
+
+private struct Whoop4Spo2Candidate {
+    let deviceId: String
+    let ts: Int
+    let red: Int
+    let ir: Int
+    let auxByte85: Int
+    let auxByte86: Int
+}
+
 extension WhoopStore {
     // MARK: - frame (de)serialization
     // Layout: [count u32 LE]{ [len u32 LE][bytes] } x count. zlib-compressed as a whole.
@@ -140,6 +154,62 @@ extension WhoopStore {
         let blob: Data = row["framesBlob"]
         let raw = try WhoopStore.zlibDecompressWithLength(blob)
         return WhoopStore.unpackFrames(raw)
+    }
+
+    /// Re-decode retained WHOOP 4.0 raw batches after adding the experimental v12 @85/@86 pair.
+    /// Existing optical rows are enriched in place; repeated runs are no-ops.
+    @discardableResult
+    public func backfillWhoop4Spo2CandidatesFromRawBatches() async throws -> Int {
+        let candidates: [Whoop4Spo2CandidateKey: Whoop4Spo2Candidate] = try syncRead { db in
+            var found: [Whoop4Spo2CandidateKey: Whoop4Spo2Candidate] = [:]
+            let batches = try Row.fetchCursor(
+                db, sql: "SELECT deviceId, framesBlob FROM rawBatch ORDER BY rowid")
+            while let batch = try batches.next() {
+                let deviceId: String = batch["deviceId"]
+                let blob: Data = batch["framesBlob"]
+                guard let raw = try? WhoopStore.zlibDecompressWithLength(blob) else { continue }
+                for frame in WhoopStore.unpackFrames(raw) {
+                    let decoded = parseFrame(frame, family: .whoop4)
+                    guard decoded.ok, decoded.crcOK != false,
+                          decoded.typeName == "HISTORICAL_DATA",
+                          decoded.parsed["hist_version"]?.intValue == 12,
+                          let ts = decoded.parsed["unix"]?.intValue,
+                          let red = decoded.parsed["spo2_red"]?.intValue,
+                          let ir = decoded.parsed["spo2_ir"]?.intValue,
+                          let state = decoded.parsed["whoop4_sleep_state_byte"]?.intValue,
+                          state >> 4 == 2,
+                          let aux85 = decoded.parsed["aux_byte_85"]?.intValue,
+                          let aux86 = decoded.parsed["aux_byte_86"]?.intValue,
+                          aux85 != 0 || aux86 != 0 else { continue }
+                    let key = Whoop4Spo2CandidateKey(deviceId: deviceId, ts: ts)
+                    found[key] = Whoop4Spo2Candidate(
+                        deviceId: deviceId, ts: ts, red: red, ir: ir,
+                        auxByte85: aux85, auxByte86: aux86)
+                }
+            }
+            return found
+        }
+        guard !candidates.isEmpty else { return 0 }
+
+        return try syncWrite { db in
+            let stmt = try db.cachedStatement(sql: """
+                INSERT INTO spo2Sample (deviceId, ts, red, ir, auxByte85, auxByte86)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(deviceId, ts) DO UPDATE SET
+                    auxByte85 = COALESCE(spo2Sample.auxByte85, excluded.auxByte85),
+                    auxByte86 = COALESCE(spo2Sample.auxByte86, excluded.auxByte86)
+                WHERE (spo2Sample.auxByte85 IS NULL AND excluded.auxByte85 IS NOT NULL)
+                   OR (spo2Sample.auxByte86 IS NULL AND excluded.auxByte86 IS NOT NULL)
+                """)
+            var changed = 0
+            for candidate in candidates.values {
+                try stmt.execute(arguments: [candidate.deviceId, candidate.ts, candidate.red,
+                                             candidate.ir, candidate.auxByte85,
+                                             candidate.auxByte86])
+                changed += db.changesCount
+            }
+            return changed
+        }
     }
 
     private static func metaFromRow(_ row: Row) -> RawBatchMeta {

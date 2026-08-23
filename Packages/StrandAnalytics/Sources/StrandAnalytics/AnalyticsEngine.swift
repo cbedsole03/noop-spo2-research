@@ -1278,6 +1278,23 @@ public enum AnalyticsEngine {
         return (mean: Int((Double(sum) / Double(kept)).rounded()), samples: kept)
     }
 
+    /// WHOOP 4.0 v12 @85 twin of `nightlySpo2CandidateMean`. Instrumentation only: the raw candidate
+    /// never writes `spo2Pct` or feeds scoring. A separate name keeps the firmware-specific evidence
+    /// explicit instead of pretending v12 @85 and WHOOP 5 v18 @82 are one proven cross-layout field.
+    public static func nightlyWhoop4Spo2CandidateMean(
+        _ sessions: [SleepSession], spo2: [SpO2Sample]
+    ) -> (mean: Int, samples: Int)? {
+        guard !sessions.isEmpty, !spo2.isEmpty else { return nil }
+        var sum = 0, kept = 0
+        for sample in spo2 {
+            guard let value = sample.auxByte85, (70...100).contains(value) else { continue }
+            guard sessions.contains(where: { $0.start <= sample.ts && sample.ts <= $0.end }) else { continue }
+            sum += value; kept += 1
+        }
+        guard kept > 0 else { return nil }
+        return (mean: Int((Double(sum) / Double(kept)).rounded()), samples: kept)
+    }
+
     /// #1169 SHADOW METRIC: the primary-session MEAN resting HR — window each detected sleep session's HR
     /// samples to `[start, end)` and delegate to the #1174-defined `PrimarySessionRestingHR.meanHR` (that
     /// definition is UNCHANGED). `IntelligenceEngine` stores the result beside the shipped nightly HR FLOOR

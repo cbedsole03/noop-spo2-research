@@ -1420,10 +1420,16 @@ final class IntelligenceEngine: ObservableObject {
                             spo2CandidateMean = cand.mean
                         }
                     } else {
-                        let auxSamples = (try? await store.v18AuxSamples(
-                            deviceId: owner, from: from, to: to, limit: 200_000)) ?? []
-                        if !auxSamples.isEmpty {
-                            if let cand = AnalyticsEngine.nightlySpo2CandidateMean(res.sleepSessions, aux: auxSamples) {
+                        // The WHOOP 4.0 v12 candidate lives at @85 on the optical row. A 5/MG has no
+                        // auxByte85, so it falls through to the existing v18 @82 path unchanged.
+                        if let cand = AnalyticsEngine.nightlyWhoop4Spo2CandidateMean(
+                            res.sleepSessions, spo2: spo2) {
+                            spo2CandidateMean = cand.mean
+                        } else {
+                            let auxSamples = (try? await store.v18AuxSamples(
+                                deviceId: owner, from: from, to: to, limit: 200_000)) ?? []
+                            if let cand = AnalyticsEngine.nightlySpo2CandidateMean(
+                                res.sleepSessions, aux: auxSamples) {
                                 spo2CandidateMean = cand.mean
                             }
                         }

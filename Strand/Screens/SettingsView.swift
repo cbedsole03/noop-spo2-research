@@ -2232,7 +2232,7 @@ struct SettingsView: View {
         ) {
             VStack(alignment: .leading, spacing: NoopMetrics.rowSpacing) {
                 Toggle(isOn: $spo2CandidateDisplayEnabled) {
-                    Text("Blood Oxygen: strap estimate (WHOOP 5/MG, Oura)")
+                    Text("Blood Oxygen: strap estimate")
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
@@ -2245,7 +2245,7 @@ struct SettingsView: View {
                     // the HRV window toggle above (analyzeRecent → refresh).
                     Task { await model.intelligence.analyzeRecent(); await model.repo.refresh() }
                 }
-                Text("Your WHOOP 5.0/MG sends a strap-computed SpO₂ percentage (the @82 candidate byte) every second — an 8-night independent validation tracked it at corr +0.99 against the WHOOP app, but two nights on the original test device moved the OPPOSITE direction, so device/firmware variance is unresolved. An Oura ring's own SpO₂ reading runs high on the wire (over 100% on a fifth to a half of samples on a clean night); this instead surfaces the ring's mean with each sample capped at 100% first, which has matched the Oura app's own displayed value on every full night checked against it so far, though only a few nights. Turning this on surfaces whichever applies to your device as \"strap estimate (unverified)\" in the Blood Oxygen tile when no calibrated import exists. It never feeds recovery or illness scoring. WHOOP 4.0 has no @82 stream, so this does nothing there.")
+                Text("Surfaces the sleep-only oxygen candidate available for your device: WHOOP 4.0 v12 @85, WHOOP 5/MG v18 @82, or Oura's capped optical estimate. These signals are experimental and not validated as calibrated pulse-oximeter readings. The nightly estimate appears only when no calibrated import exists and never feeds recovery or illness scoring.")
                     .font(StrandFont.caption)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)

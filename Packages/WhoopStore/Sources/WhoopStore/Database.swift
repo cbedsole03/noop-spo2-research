@@ -887,6 +887,18 @@ extension WhoopStore {
                 t.add(column: "skinTempC", .double)
             }
         }
+        // v41-v42 (research): preserve the WHOOP 4.0 v12 sleep-window bytes @85/@86 beside the
+        // raw optical row. Both are nullable instrumentation; neither is calibrated `spo2Pct`.
+        migrator.registerMigration("v41-whoop4-spo2-candidate") { db in
+            try db.alter(table: "spo2Sample") { t in
+                t.add(column: "auxByte85", .integer)
+            }
+        }
+        migrator.registerMigration("v42-whoop4-spo2-byte86") { db in
+            try db.alter(table: "spo2Sample") { t in
+                t.add(column: "auxByte86", .integer)
+            }
+        }
         return migrator
     }
 }

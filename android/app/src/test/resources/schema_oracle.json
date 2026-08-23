@@ -41,10 +41,13 @@
     "v37-daily-avg-sdnn",
     "v38-apple-step-hour",
     "v39-ppg-burst-index",
-    "v40-daily-skin-temp-absolute"
+    "v40-daily-skin-temp-absolute",
+    "v41-whoop4-spo2-candidate",
+    "v42-whoop4-spo2-byte86"
   ],
   "divergenceReasons": {
     "android-orphan-synced-column": "REAL COLUMN DRIFT: `synced` exists on Android only. GRDB's v10 note is explicit that stepSample gets no `synced` column ('unused; see StreamStore'), and v12's ppgHrSample never had one either; the Room entities copied the flag from the older per-second entities. Nothing reads it on Android — the per-row upload flag belongs to an upload path that does not exist there — so it is dead width, not divergent data. Removing it needs a Room table rebuild.",
+    "whoop4-spo2-tail-ios-only": "Deliberate iOS-only instrumentation: WHOOP 4.0 BLE support is currently implemented on the Swift path, so spo2Sample.auxByte85 and auxByte86 are absent from Room. Both are nullable raw research fields, never write calibrated spo2Pct, and can be added to Android later with a Room migration when that decoder is implemented.",
     "battery-alter-append-order": "REAL COLUMN-ORDER DRIFT (CLAUDE.md: 'column order in a Room CREATE TABLE must match the entity field order'). GRDB appended `synced` (v5) then `charging` (v6) with ALTER TABLE, which can only append; the Room entity declares `charging` before `synced`. Same columns, same types, different positions — so any positional copy (INSERT INTO battery SELECT * FROM …) swaps them. Fixing it means reordering the Room entity's fields, which changes Room's identity hash and therefore needs a version bump plus a no-op migration.",
     "grdb-boolean-affinity": "GRDB's .boolean column type is declared BOOLEAN, which SQLite gives NUMERIC affinity; Room maps Kotlin Boolean to INTEGER. For the 0/1 values both sides write, NUMERIC and INTEGER affinity store bit-identical INTEGERs, so a .noopbak round-trips. Closing it means a GRDB table rebuild.",
     "paired-device-alter-append-order": "REAL COLUMN-ORDER DRIFT, same shape as battery. GRDB's v16-paired-device-peripheral appended `peripheralId` at the end; the Room entity declares it fifth, between `nickname` and `sourceKind`.",

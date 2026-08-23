@@ -383,6 +383,25 @@ func registerPostHooks() {
         }
         fb.parsed["rr_intervals"] = .intArray(rrVals)
 
+        // WHOOP 4.0 v12 tail: @84 is packed band state (high nibble 2 = asleep); @85/@86 activate
+        // together in periodic overnight optical bursts. @85 is usually 70...100, while @86 multiplexes
+        // percentage-like values with status codes. Preserve both raw bytes so research can determine
+        // which is the final saturation output. The gated @85 view remains instrumentation only.
+        if version == 12, length > 86, frame.count > 86 {
+            let stateByte = Int(frame[84])
+            let aux85 = Int(frame[85])
+            let aux86 = Int(frame[86])
+            fb.add(84, 1, "whoop4_sleep_state_byte", "sleep", value: .int(stateByte))
+            fb.add(85, 1, "aux_byte_85", "status", value: .int(aux85))
+            fb.add(86, 1, "aux_byte_86", "status", value: .int(aux86))
+            fb.parsed["whoop4_sleep_state_byte"] = .int(stateByte)
+            fb.parsed["aux_byte_85"] = .int(aux85)
+            fb.parsed["aux_byte_86"] = .int(aux86)
+            if stateByte >> 4 == 2, (70...100).contains(aux85) {
+                fb.parsed["spo2_candidate_85"] = .int(aux85)
+            }
+        }
+
         // Validate the v24-layout guess for an unmapped version: gravity is the DSP-separated
         // orientation vector, so |gravity| ≈ 1 g on a real record regardless of motion. If the magnitude
         // isn't ~1 g (or HR is implausible), the layout doesn't fit this firmware — drop the decoded

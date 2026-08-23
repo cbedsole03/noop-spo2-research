@@ -111,9 +111,15 @@ public struct SpO2Sample: Equatable, Codable {
     public let ts: Int
     public let red: Int
     public let ir: Int
+    /// Raw WHOOP 4.0 v12 sleep-window tail bytes. They are research instrumentation, not confirmed
+    /// saturation percentages; @86 also carries status-like values outside 70...100.
+    public let auxByte85: Int?
+    public let auxByte86: Int?
     public let unit: String     // "raw_adc"
-    public init(ts: Int, red: Int, ir: Int, unit: String = "raw_adc") {
-        self.ts = ts; self.red = red; self.ir = ir; self.unit = unit
+    public init(ts: Int, red: Int, ir: Int, auxByte85: Int? = nil, auxByte86: Int? = nil,
+                unit: String = "raw_adc") {
+        self.ts = ts; self.red = red; self.ir = ir
+        self.auxByte85 = auxByte85; self.auxByte86 = auxByte86; self.unit = unit
     }
 }
 

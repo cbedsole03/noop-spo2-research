@@ -233,29 +233,35 @@ enum DebugDataDiagnostics {
         lines.append(AnalyticsEngine.skinTempFunnel([det], hr: hr, skinTemp: skin,
                                                     family: family, anchorRaw: devAnchor).summary)
 
-        // #112/#103 — the 5/MG SpO2 CANDIDATE (@82), as one number a wearer can check against the figure
-        // the WHOOP app reports for the same night. The candidate cannot be promoted while two straps
-        // disagree about it, and the only way to read it until now was to scroll the Deep Timeline and
-        // eyeball it — which is not an instrument to hand a volunteer. Diagnostic only: nothing scores
-        // this, and it is NOT a blood-oxygen reading. Absent on a WHOOP 4.0, which carries raw red/IR ADC
-        // and no candidate at all — said explicitly so a 4.0 owner is not left wondering.
-        //
-        // The read is NOT collapsed to `?? []`. A failed read and a night with no candidate are different
-        // facts, and this is a diagnostic — printing "no in-band readings" because the query threw would
-        // be a confident false statement in the one place whose whole job is to say what is actually
-        // there. Same distinction as the imported-water and caffeine read gates (#949).
-        let auxRead = try? await store.v18AuxSamples(deviceId: did, from: cs.startTs, to: cs.endTs,
-                                                     limit: spo2CandidateAuxLimit)
-        if auxRead == nil {
-            lines.append("SpO₂ candidate @82: could not read the aux stream for this night — "
-                         + "a read failure, NOT an absence of readings.")
-        } else if let cand = AnalyticsEngine.nightlySpo2CandidateMean([det], aux: auxRead ?? []) {
-            lines.append("SpO₂ candidate @82 (5/MG): mean \(cand.mean) over \(cand.samples) in-band readings "
-                         + "— UNVERIFIED, compare against the WHOOP app's figure for this night (#103).")
-        } else if family == .whoop5 {
-            lines.append("SpO₂ candidate @82 (5/MG): no in-band readings inside this night's span.")
+        // #112/#103: diagnostics only. These sleep-only fields look like strap-computed percentages,
+        // but neither layout is clinically validated and neither feeds scoring or `spo2Pct`.
+        if family == .whoop4 {
+            let spo2Read = try? await store.spo2Samples(
+                deviceId: did, from: cs.startTs, to: cs.endTs, limit: spo2CandidateAuxLimit)
+            if spo2Read == nil {
+                lines.append("SpO₂ candidate @85 (WHOOP 4.0 v12): could not read the optical stream "
+                             + "for this night — a read failure, NOT an absence of readings.")
+            } else if let cand = AnalyticsEngine.nightlyWhoop4Spo2CandidateMean(
+                [det], spo2: spo2Read ?? []) {
+                lines.append("SpO₂ candidate @85 (WHOOP 4.0 v12): mean \(cand.mean) over "
+                             + "\(cand.samples) in-band readings — UNVERIFIED (#103).")
+            } else {
+                lines.append("SpO₂ candidate @85 (WHOOP 4.0 v12): no in-band readings inside "
+                             + "this night's span.")
+            }
         } else {
-            lines.append("SpO₂ candidate @82: not carried by a WHOOP 4.0 (raw red/IR ADC only).")
+            let auxRead = try? await store.v18AuxSamples(
+                deviceId: did, from: cs.startTs, to: cs.endTs, limit: spo2CandidateAuxLimit)
+            if auxRead == nil {
+                lines.append("SpO₂ candidate @82 (5/MG v18): could not read the aux stream for "
+                             + "this night — a read failure, NOT an absence of readings.")
+            } else if let cand = AnalyticsEngine.nightlySpo2CandidateMean([det], aux: auxRead ?? []) {
+                lines.append("SpO₂ candidate @82 (5/MG v18): mean \(cand.mean) over "
+                             + "\(cand.samples) in-band readings — UNVERIFIED (#103).")
+            } else {
+                lines.append("SpO₂ candidate @82 (5/MG v18): no in-band readings inside "
+                             + "this night's span.")
+            }
         }
         return lines
     }

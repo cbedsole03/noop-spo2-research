@@ -314,6 +314,33 @@ struct TestCentreView: View {
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
 
+                if !is5MG {
+                    NavigationLink {
+                        Spo2ComparatorView()
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "waveform.path.ecg")
+                                .foregroundStyle(StrandPalette.accent)
+                                .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("SpO₂ Comparator")
+                                    .font(StrandFont.subhead).foregroundStyle(StrandPalette.textPrimary)
+                                Text("Pair WHOOP 4.0 candidates with fingertip readings")
+                                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundStyle(StrandPalette.textTertiary)
+                                .accessibilityHidden(true)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Open SpO₂ Comparator")
+
+                    Divider().overlay(StrandPalette.hairline)
+                }
+
                 Toggle(isOn: $ppgHrSubLagInterpEnabled) {
                     Text("HR-from-PPG sub-lag interpolation (v26 gap-fill)")
                         .font(StrandFont.subhead).foregroundStyle(StrandPalette.textPrimary)
