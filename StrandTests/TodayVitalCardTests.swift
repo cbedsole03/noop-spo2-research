@@ -44,6 +44,29 @@ final class TodayVitalCardTests: XCTestCase {
         XCTAssertEqual(TodayView.skinTempCardValue(nil, fahrenheit: false), "—")
     }
 
+    func testResearchKeyMetricsIncludesSkinTemperatureForExistingLayouts() {
+        XCTAssertEqual(KeyMetricPrefs.decodeEnabled(
+            KeyMetricPrefs.encode([.charge, .hrv, .restingHr, .steps])),
+            [.charge, .hrv, .restingHr, .skinTemp, .steps])
+        XCTAssertTrue(KeyMetric.defaultOrder.prefix(6).contains(.skinTemp))
+    }
+
+    func testKeyMetricFallsBackToNewestPersistedTemperature() {
+        let older = DailyMetric(day: "2026-08-24", totalSleepMin: nil, efficiency: nil,
+                                deepMin: nil, remMin: nil, lightMin: nil, disturbances: nil,
+                                restingHr: nil, avgHrv: nil, recovery: nil, strain: nil,
+                                exerciseCount: nil, spo2Pct: nil, skinTempDevC: -1.09,
+                                respRateBpm: nil)
+        let newest = DailyMetric(day: "2026-08-25", totalSleepMin: nil, efficiency: nil,
+                                 deepMin: nil, remMin: nil, lightMin: nil, disturbances: nil,
+                                 restingHr: nil, avgHrv: nil, recovery: nil, strain: nil,
+                                 exerciseCount: nil, spo2Pct: nil, skinTempDevC: 0.38,
+                                 respRateBpm: nil)
+
+        XCTAssertEqual(TodayView.latestSkinTempValue(displayed: nil, lastVitals: nil,
+                                                     lastSkinTemp: nil, allDays: [older, newest]), 0.38)
+    }
+
     // MARK: Respiratory — the carry has to be bounded
 
     /// The reported regression, on the card this screen shows: a WHOOP CSV import ending 2026-07-30,

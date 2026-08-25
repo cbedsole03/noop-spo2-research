@@ -21,6 +21,7 @@ enum KeyMetric: String, CaseIterable, Identifiable {
     case rest
     case hrv
     case restingHr
+    case skinTemp
     case bloodOxygen
     case respiratory
     case steps
@@ -42,6 +43,7 @@ enum KeyMetric: String, CaseIterable, Identifiable {
         case .rest:        return String(localized: "Rest")
         case .hrv:         return "HRV"
         case .restingHr:   return String(localized: "Resting HR")
+        case .skinTemp:    return String(localized: "Skin Temperature")
         case .bloodOxygen: return String(localized: "Blood Oxygen")
         case .respiratory: return String(localized: "Respiratory")
         case .steps:       return String(localized: "Steps")
@@ -56,7 +58,7 @@ enum KeyMetric: String, CaseIterable, Identifiable {
     /// The original, hard-coded grid order — the default when the user hasn't customised the layout.
     static let defaultOrder: [KeyMetric] = [
         .charge, .effort, .rest, .hrv, .restingHr,
-        .bloodOxygen, .respiratory, .steps, .weight, .calories,
+        .skinTemp, .bloodOxygen, .respiratory, .steps, .weight, .calories,
     ]
 }
 
@@ -92,6 +94,16 @@ enum KeyMetricPrefs {
             let raw = token.trimmingCharacters(in: .whitespaces)
             if let m = KeyMetric(rawValue: raw), seen.insert(m).inserted {
                 result.append(m)
+            }
+        }
+        // Skin Temperature is new to Key Metrics in the research build. A saved layout predating the tile
+        // cannot contain it, so enable it by placing it after Resting HR (or at the end when Resting HR is
+        // hidden). Existing layouts that already contain it keep their exact saved order.
+        if !result.contains(.skinTemp) {
+            if let restingIndex = result.firstIndex(of: .restingHr) {
+                result.insert(.skinTemp, at: result.index(after: restingIndex))
+            } else {
+                result.append(.skinTemp)
             }
         }
         return result

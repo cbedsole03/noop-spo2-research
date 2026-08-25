@@ -780,7 +780,9 @@ final class IntelligenceEngine: ObservableObject {
         // metricSeries as "spo2_candidate" under the "-noop" device ID, so the Blood Oxygen tile can
         // surface it as a "strap estimate (unverified)" fallback. Default OFF per the derived-biosignal
         // rule (CLAUDE.md) — neither candidate is a validated calibration.
-        let spo2CandidateDisplayOn = PuffinExperiment.spo2CandidateDisplayEnabled
+        // Research build: persist the separately named candidate automatically so the configured Key
+        // Metrics card remains populated. It still never writes spo2Pct or feeds any score.
+        let spo2CandidateDisplayOn = true
         // #1545: the Effort TRIMP recipe, read ONCE per pass. Global (same for every day), so it folds
         // into the config signature below rather than the per-day key.
         let effortMethodGlobal = PuffinExperiment.effortMethod
