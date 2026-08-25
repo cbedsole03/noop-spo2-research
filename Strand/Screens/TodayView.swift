@@ -2441,7 +2441,8 @@ struct TodayView: View {
             // The card's own unit is deliberately empty — the value carries "°C" / "Δ°F" itself.
             // Same per-field carry as Blood Oxygen; both are sparse enough that an old reading is honest.
             return Self.skinTempCardValue(
-                d?.skinTempDevC ?? lastVitalsDay?.skinTempDevC ?? lastSkinTempDay?.skinTempDevC,
+                Self.latestSkinTempValue(displayed: d, lastVitals: lastVitalsDay,
+                                         lastSkinTemp: lastSkinTempDay, allDays: repo.days),
                 fahrenheit: temperatureUnit == .fahrenheit)
         case .sleep:
             return sleepValue(d)
@@ -3536,6 +3537,23 @@ struct TodayView: View {
                 sparkline: sparks["rhr"],
                 sparkColor: StrandPalette.metricRose
             )
+        case .skinTemp:
+            // The research metric is already persisted on DailyMetric; resolve today/prior/latest exactly
+            // as the populated dashboard row does, then use the shared bimodal absolute-vs-delta formatter.
+            let temperature = Self.latestSkinTempValue(
+                displayed: d, lastVitals: lastVitalsDay,
+                lastSkinTemp: lastSkinTempDay, allDays: repo.days)
+            let temperatureText = Self.skinTempCardValue(
+                temperature, fahrenheit: temperatureUnit == .fahrenheit)
+            StatTile(
+                label: "Skin Temperature",
+                value: temperatureText,
+                caption: temperature == nil ? String(localized: "After tonight's sleep")
+                                            : String(localized: "latest reading"),
+                accent: temperature == nil ? StrandPalette.textPrimary : StrandPalette.metricAmber,
+                sparkline: sparks["skin_temp"],
+                sparkColor: StrandPalette.metricAmber
+            )
         case .bloodOxygen:
             // PER-FIELD carry (perField: lastSpo2Day): the whole-row `lastScoredRecoveryDay` carry lands on a
             // row whose spo2Pct is nil (computed rows never bank a percentage), so the tile falls through to
@@ -3543,25 +3561,18 @@ struct TodayView: View {
             let spo2 = carriedVital(unit: "SpO₂", today: d?.spo2Pct,
                                     prior: { $0.spo2Pct }, perField: lastSpo2Day,
                                     format: { String(format: "%.0f%%", $0) })
-            // #103: firmware-specific SpO₂ candidate fallback. When spo2Pct is nil and the experimental
-            // toggle is ON, surface the strap's own nightly mean as a "strap estimate
-            // (unverified)" so the tile shows a number instead of "—". The candidate has split cross-device
-            // evidence (corr +0.99 on 8 nights, but 2 nights moved opposite on the original device), so it
-            // ships behind a default-off toggle and is never written to `spo2Pct` (CLAUDE.md derived-
-            // biosignal rule). The sparkline switches to the candidate trend when the fallback is active.
-            // When the toggle is ON but NO candidate data exists, show an explicit empty state so the
-            // user can tell the
-            // difference between "toggle off" and "toggle on but no data" — a silent blank reads as broken.
-            let spo2CandidateOn = PuffinExperiment.spo2CandidateDisplayEnabled
-            let candidateTail = spo2CandidateOn ? sparks["spo2_candidate"]?.last : nil
+            // Calibrated/imported SpO₂ remains authoritative. Otherwise surface the separately persisted
+            // candidate as a labelled strap estimate. It remains outside spo2Pct and all scoring inputs;
+            // only the Key Metrics value and sparkline fall back to it.
+            // No candidate still produces the existing honest empty state.
+            //
+            let candidateTail = sparks["spo2_candidate"]?.last
             let spo2Value = spo2.value == "—" && candidateTail != nil
                 ? String(format: "%.0f%%", candidateTail!)
                 : spo2.value
             let spo2Caption: String = spo2.value == "—" && candidateTail != nil
                 ? String(localized: "strap estimate (unverified)")
-                : (spo2.value == "—" && spo2CandidateOn
-                   ? String(localized: "toggle ON · no strap estimate data")
-                   : (spo2.caption ?? ""))
+                : (spo2.caption ?? "")
             StatTile(
                 label: "Blood Oxygen",
                 value: spo2Value,
@@ -3640,8 +3651,8 @@ struct TodayView: View {
         case .weight:
             StatTile(
                 label: "Weight",
-                value: weightTile(aLatest?.weightKg).value,
-                caption: weightTile(aLatest?.weightKg).caption,
+                value: weightTile(aLatest?.weightKg, seriesLatestKg: sparks["weight"]?.last).value,
+                caption: weightTile(aLatest?.weightKg, seriesLatestKg: sparks["weight"]?.last).caption,
                 accent: StrandPalette.accent,
                 sparkline: sparks["weight"],
                 sparkColor: StrandPalette.accent
@@ -4005,6 +4016,7 @@ struct TodayView: View {
         async let hrvSpark           = sparkValues("hrv", source: "my-whoop", window: 14)
         async let rhrSpark           = sparkValues("rhr", source: "my-whoop", window: 14)
         async let spo2Spark          = sparkValues("spo2", source: "my-whoop", window: 14)
+        async let skinTempSpark      = sparkValuesExplore("skin_temp", source: "my-whoop", window: 14)
         // #103: firmware-specific SpO₂ candidate nightly mean. Read via `exploreSeries` so the computed
         // "-noop" metricSeries backs the trend. Empty when the toggle is OFF (the engine writes nothing)
         // or no in-band candidate was captured. Used as a fallback for the Blood Oxygen tile when
@@ -4026,6 +4038,7 @@ struct TodayView: View {
         sparks["hrv"]             = await hrvSpark
         sparks["rhr"]             = await rhrSpark
         sparks["spo2"]            = await spo2Spark
+        sparks["skin_temp"]       = await skinTempSpark
         sparks["spo2_candidate"]  = await spo2CandidateSpark
         sparks["resp_rate"]   = await respRateSpark
         sparks["steps"]       = await stepsAppleSpark
@@ -4466,8 +4479,9 @@ struct TodayView: View {
     /// sparse-but-recent value still renders); when neither carries a weight, falls back to the user's
     /// self-reported profile weight instead of ", " (#204). Always formatted through the shared
     /// `UnitFormatter` so the Imperial/Metric toggle reaches this tile. Mirrors Android's `weightTile`.
-    private func weightTile(_ appleWeightKg: Double?) -> (value: String, caption: String) {
-        if let kg = appleWeightKg ?? sparks["weight"]?.last {
+    private func weightTile(_ appleWeightKg: Double?, seriesLatestKg: Double?) -> (value: String, caption: String) {
+        // Manual-log writes live in the shared series, so its newest value wins over a daily import.
+        if let kg = seriesLatestKg ?? appleWeightKg {
             return (UnitFormatter.massFromKilograms(kg, system: unitSystem), String(localized: "latest"))
         }
         return (UnitFormatter.massFromKilograms(profile.weightKg, system: unitSystem), String(localized: "from profile"))
@@ -4642,6 +4656,17 @@ struct TodayView: View {
     static func skinTempCardValue(_ value: Double?, fahrenheit: Bool) -> String {
         guard let value else { return "—" }
         return SkinTempDisplay.format(value, fahrenheit: fahrenheit)
+    }
+
+    /// Resolve the research build's pinned Skin Temp card. The normal today/prior-day chain stays first;
+    /// the final newest-non-null fallback reads the same persisted `dailyMetric.skinTempDevC` column and
+    /// prevents a day-key/UI-cache mismatch from hiding temperature data that is already on disk.
+    static func latestSkinTempValue(displayed: DailyMetric?, lastVitals: DailyMetric?,
+                                    lastSkinTemp: DailyMetric?, allDays: [DailyMetric]) -> Double? {
+        displayed?.skinTempDevC
+            ?? lastVitals?.skinTempDevC
+            ?? lastSkinTemp?.skinTempDevC
+            ?? allDays.last(where: { $0.skinTempDevC != nil })?.skinTempDevC
     }
 
     /// Pure copy/gate behind `buildingHint`, extracted so it can be unit-tested without a live view.

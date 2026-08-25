@@ -34,6 +34,14 @@ struct LiquidTodayView: View {
 
     /// Shared with the real Today's card-customise editor so the two stay in sync.
     @AppStorage(DashboardCardPrefs.selectionKey) private var dashboardCardsRaw = ""
+    /// Skin Temp follows the same explicit °C/°F override (or system-derived default) as classic Today.
+    @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
+    @AppStorage(UnitPrefs.temperatureKey) private var temperatureRaw = ""
+    private var unitSystem: UnitSystem { UnitSystem(rawValue: unitSystemRaw) ?? .metric }
+    private var temperatureUnit: TemperatureUnit {
+        let system = UnitSystem(rawValue: unitSystemRaw) ?? .metric
+        return UnitPrefs.resolveTemperature(system: system, override: temperatureRaw)
+    }
     /// #today-hosted-cards: the ordered Trends/Sleep cards the user has hosted in Today. Empty by default
     /// (opt-in); rendered by the `.addedCards` section. Shared @AppStorage key with Android.
     @AppStorage(HostedCardPrefs.selectionKey) private var hostedCardsRaw = ""
@@ -869,8 +877,15 @@ struct LiquidTodayView: View {
             cardLink(.metric("spo2"), title: card.title, sub: card.subtitle,
                      value: "–", tint: StrandPalette.metricCyan, frac: nil)
         case .skinTemp:
+            // This used to be a permanent placeholder even when skinTempDevC was persisted. Resolve the
+            // same current/prior/newest value as classic Today and format absolute vs delta correctly.
+            let temperature = TodayView.latestSkinTempValue(
+                displayed: displayDay, lastVitals: vitalsDay,
+                lastSkinTemp: nil, allDays: repo.days)
             cardLink(.metric("skin_temp"), title: card.title, sub: card.subtitle,
-                     value: "–", tint: StrandPalette.metricAmber, frac: nil)
+                     value: TodayView.skinTempCardValue(
+                        temperature, fahrenheit: temperatureUnit == .fahrenheit),
+                     tint: StrandPalette.metricAmber, frac: nil)
         case .calories:
             // #616: show the resolved imported-first value and route to the matching detail source, like
             // the Steps card — was a "–" placeholder wired to the imported-only detail.
@@ -1132,9 +1147,24 @@ struct LiquidTodayView: View {
             ktile("HRV", icon: keyMetricIcon(metric), intText(hrv), "ms", StrandPalette.metricCyan, fracOver(hrv, 120), key: "hrv")
         case .restingHr:
             ktile(String(localized: "Rest HR"), icon: keyMetricIcon(metric), intText(rhr), "bpm", StrandPalette.metricRose, fracOver(rhr, 100), key: "rhr")
+        case .skinTemp:
+            let temperature = TodayView.latestSkinTempValue(
+                displayed: displayDay, lastVitals: vitalsDay,
+                lastSkinTemp: nil, allDays: repo.days)
+            ktile(String(localized: "Skin Temperature"), icon: keyMetricIcon(metric),
+                  TodayView.skinTempCardValue(temperature, fahrenheit: temperatureUnit == .fahrenheit),
+                  "", StrandPalette.metricAmber, nil, key: "skin_temp")
         case .bloodOxygen:
-            let spo2 = displayDay?.spo2Pct ?? vitalsDay?.spo2Pct
-            ktile(String(localized: "Blood Oxygen"), icon: keyMetricIcon(metric), intText(spo2), "%", StrandPalette.metricCyan, fracOver(spo2, 100), key: "spo2")
+            let calibrated = displayDay?.spo2Pct ?? vitalsDay?.spo2Pct
+            let candidate = calibrated == nil ? windowedSpark("spo2_candidate").last : nil
+            let spo2 = calibrated ?? candidate
+            let isEstimate = calibrated == nil && candidate != nil
+            let detail = MetricCatalog.all.first(where: { $0.key == "spo2" })
+            ktile(String(localized: "Blood Oxygen"), icon: keyMetricIcon(metric),
+                  spo2.map { String(format: "%.0f%%", $0) } ?? "—",
+                  isEstimate ? "strap est." : "", StrandPalette.metricCyan,
+                  fracOver(spo2, 100), key: isEstimate ? "spo2_candidate" : "spo2",
+                  detailMetric: detail)
         case .respiratory:
             let resp = displayDay?.respRateBpm ?? vitalsDay?.respRateBpm ?? respDay?.respRateBpm
             ktile(String(localized: "Respiratory"), icon: keyMetricIcon(metric), resp.map { String(format: "%.1f", $0) } ?? "—", "rpm", StrandPalette.accent, fracOver(resp, 24), key: "resp_rate")
@@ -1142,7 +1172,10 @@ struct LiquidTodayView: View {
             ktile(String(localized: "Steps"), icon: keyMetricIcon(metric), stepsText, "", StrandPalette.chargeColor,
                   fracOver(stepCount, 10000), key: stepsDetailKey, detailMetric: stepsDetailMetric)
         case .weight:
-            ktile(String(localized: "Weight"), icon: keyMetricIcon(metric), "—", "", StrandPalette.metricAmber, nil, key: "weight")
+            let kg = windowedSpark("weight").last
+            let shown = UnitFormatter.massFromKilograms(kg ?? profile.weightKg, system: unitSystem)
+            ktile(String(localized: "Weight"), icon: keyMetricIcon(metric), shown,
+                  kg == nil ? "profile" : "", StrandPalette.metricAmber, nil, key: "weight")
         case .calories:
             // #616: imported-first value (imported ?: activeKcalEst) + route the tap to the matching
             // detail source, so the number, its sparkline and the chart it opens all agree.
@@ -1158,6 +1191,7 @@ struct LiquidTodayView: View {
         case .rest: return "moon.stars.fill"
         case .hrv: return "waveform.path.ecg"
         case .restingHr: return "heart.circle.fill"
+        case .skinTemp: return "thermometer.medium"
         case .bloodOxygen: return "drop.fill"
         case .respiratory: return "lungs.fill"
         case .steps: return "figure.walk"
@@ -1365,6 +1399,8 @@ struct LiquidTodayView: View {
         async let vo2A = repo.exploreSeries(key: "vo2max_est", source: "my-whoop")
         async let vitA = repo.exploreSeries(key: "vitality", source: "my-whoop")
         async let stepsA = repo.exploreSeries(key: "steps_est", source: "my-whoop")
+        async let weightA = repo.exploreSeries(key: "weight", source: "apple-health")
+        async let spo2CandidateA = repo.exploreSeries(key: "spo2_candidate", source: "my-whoop")
         async let appleA = repo.appleDailyRows()
         async let hrA = repo.hrBuckets(from: from, to: to, bucketSeconds: 300)
         async let wkA = repo.workoutRows()
@@ -1382,6 +1418,8 @@ struct LiquidTodayView: View {
 
         let restSeries = await restA
         let stepsSeries = await stepsA
+        let weightSeries = await weightA
+        let spo2CandidateSeries = await spo2CandidateA
         let restByDay = Dictionary(restSeries.map { ($0.day, $0.value) }, uniquingKeysWith: { _, last in last })
         // Selected day's Rest; tail fallback only at offset 0 (a past day with no row shows nothing) AND
         // only when the tail night is still fresh. #977: a live 5.0 whose sleep never scores (no overnight
@@ -1424,8 +1462,13 @@ struct LiquidTodayView: View {
             "hrv": sparkRows.compactMap { r in r.avgHrv.map { (r.day, $0) } },
             "rhr": sparkRows.compactMap { r in r.restingHr.map { (r.day, Double($0)) } },
             "spo2": sparkRows.compactMap { r in r.spo2Pct.map { (r.day, $0) } },
+            "skin_temp": sparkRows.compactMap { r in r.skinTempDevC.map { (r.day, $0) } },
             "resp_rate": sparkRows.compactMap { r in r.respRateBpm.map { (r.day, $0) } },
             "steps": sparkRows.compactMap { r in r.steps.map { (r.day, Double($0)) } },
+            "weight": weightSeries.filter { $0.day >= sparkCutoff && $0.day <= selectedDayKey }
+                .map { ($0.day, $0.value) },
+            "spo2_candidate": spo2CandidateSeries.filter { $0.day >= sparkCutoff && $0.day <= selectedDayKey }
+                .map { ($0.day, $0.value) },
             // #616: the Calories tile drew no trend line — this dict had no matching entry, so windowedSpark
             // returned []. Bank the imported-first calorie series (built above) so the sparkline matches the
             // tile's imported-first number and a Health-Connect / Apple-only user gets a trend.

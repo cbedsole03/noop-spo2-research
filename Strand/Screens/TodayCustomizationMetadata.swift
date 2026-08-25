@@ -43,6 +43,7 @@ extension KeyMetric {
         case .rest: return "moon.stars"
         case .hrv: return "waveform.path.ecg"
         case .restingHr: return "heart.fill"
+        case .skinTemp: return "thermometer.medium"
         case .bloodOxygen: return "drop.fill"
         case .respiratory: return "lungs.fill"
         case .steps: return "figure.walk"
@@ -58,6 +59,7 @@ extension KeyMetric {
         case .rest, .hrv: return StrandPalette.metricPurple
         case .restingHr: return StrandPalette.metricRose
         case .bloodOxygen, .steps: return StrandPalette.metricCyan
+        case .skinTemp: return StrandPalette.metricAmber
         case .respiratory, .weight: return StrandPalette.accent
         case .calories: return StrandPalette.metricAmber
         }

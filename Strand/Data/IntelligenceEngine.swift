@@ -666,12 +666,12 @@ final class IntelligenceEngine: ObservableObject {
         // the 5/MG cumulative @57 series + wrap-aware deltas + dropped deltas, replayed below tagged `.steps`.
         // The trace recomputes the SAME wrap-aware sum analyzeDay already did, so the steps total is unchanged.
         let stepsTraceActive = TestCentre.active(.steps)
-        // #103: read the SpO₂ candidate display toggle ONCE here (off the detached executor, matching the
-        // other toggle reads above). When ON, each night's `spo2_candidate_82` mean is computed from the
-        // V18AuxSample stream and written to metricSeries as "spo2_candidate" under the "-noop" device ID,
-        // so the Blood Oxygen tile can surface it as a "strap estimate (unverified)" fallback. Default OFF
-        // per the derived-biosignal rule (CLAUDE.md) — the @82 candidate has split cross-device evidence.
-        let spo2CandidateDisplayOn = PuffinExperiment.spo2CandidateDisplayEnabled
+        // Research build: compute and persist each night's firmware-specific SpO₂ candidate so Key Metrics
+        // can use it when no calibrated/imported percentage exists. It remains a separately named series,
+        // is labelled "strap estimate (unverified)" in the UI, and never writes DailyMetric.spo2Pct or feeds
+        // recovery/illness scoring. This changes collection/display availability, not clinical validation.
+        // Keep the existing Bool plumbing into analyzeDay and the cache signature below.
+        let spo2CandidateDisplayOn = true
 
         // ── #1005 BATTERY: per-day reuse cache setup (see `dayScanCache`) ────────────────────────────
         // The stager toggles are read per-day inside the loop below, but they are global (same value every
