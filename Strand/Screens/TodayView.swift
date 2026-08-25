@@ -3561,22 +3561,17 @@ struct TodayView: View {
             let spo2 = carriedVital(unit: "SpO₂", today: d?.spo2Pct,
                                     prior: { $0.spo2Pct }, perField: lastSpo2Day,
                                     format: { String(format: "%.0f%%", $0) })
-            // Calibrated/imported SpO₂ remains authoritative. Otherwise surface the separately persisted
-            // candidate as a labelled strap estimate. It remains outside spo2Pct and all scoring inputs;
-            // only the Key Metrics value and sparkline fall back to it.
+            // Calibrated/imported SpO₂ remains authoritative. Otherwise surface the separately persisted candidate;
             // No candidate still produces the existing honest empty state.
             //
             let candidateTail = sparks["spo2_candidate"]?.last
             let spo2Value = spo2.value == "—" && candidateTail != nil
                 ? String(format: "%.0f%%", candidateTail!)
                 : spo2.value
-            let spo2Caption: String = spo2.value == "—" && candidateTail != nil
-                ? String(localized: "strap estimate (unverified)")
-                : (spo2.caption ?? "")
             StatTile(
                 label: "Blood Oxygen",
                 value: spo2Value,
-                caption: spo2Caption,
+                caption: spo2.caption ?? "",
                 accent: spo2Value == "—" ? StrandPalette.textPrimary : StrandPalette.metricCyan,
                 sparkline: spo2.value == "—" && candidateTail != nil ? sparks["spo2_candidate"] : sparks["spo2"],
                 sparkColor: StrandPalette.metricCyan

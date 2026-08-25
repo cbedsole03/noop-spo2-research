@@ -1162,7 +1162,7 @@ struct LiquidTodayView: View {
             let detail = MetricCatalog.all.first(where: { $0.key == "spo2" })
             ktile(String(localized: "Blood Oxygen"), icon: keyMetricIcon(metric),
                   spo2.map { String(format: "%.0f%%", $0) } ?? "—",
-                  isEstimate ? "strap est." : "", StrandPalette.metricCyan,
+                  "", StrandPalette.metricCyan,
                   fracOver(spo2, 100), key: isEstimate ? "spo2_candidate" : "spo2",
                   detailMetric: detail)
         case .respiratory:
