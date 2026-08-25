@@ -733,6 +733,23 @@ struct MetricDetailView: View {
                     // scores) or a big SF-Rounded headline, floated over the domain's starfield,
                     // with the range pill. Then the frosted chart / stat tiles / correlations.
                     heroHeader(effectiveRange: effRange, windowed: win, windowFellBack: fellBack)
+                    if metric.key == "spo2" {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("Blood Oxygen reading", systemImage: "exclamationmark.triangle.fill")
+                                .font(StrandFont.headline)
+                                .foregroundStyle(StrandPalette.statusWarning)
+                            Text("Some readings shown here are strap estimates from the imported signal and have not been clinically validated. They are for research context only and are not used in health scoring or diagnosis.")
+                                .font(StrandFont.body)
+                                .foregroundStyle(StrandPalette.textPrimary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(NoopMetrics.cardPadding)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(NoopPanelSurface(tint: StrandPalette.statusWarning,
+                                                     cornerRadius: NoopMetrics.cardRadius,
+                                                     elevated: true))
+                        .accessibilityElement(children: .combine)
+                    }
                     heroChart(effectiveRange: effRange, windowed: win, windowFellBack: fellBack)
                     statRow(effectiveRange: effRange, windowed: win)
                     readingsTable(windowed: win)

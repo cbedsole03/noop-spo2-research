@@ -1191,19 +1191,16 @@ struct LiquidTodayView: View {
         case .restingHr:
             ktile(String(localized: "Rest HR"), icon: keyMetricIcon(metric), intText(rhr), "bpm", StrandPalette.metricRose, fracOver(rhr, 100), key: "rhr")
         case .bloodOxygen:
-            // Queue 11a: the Liquid tile used to read `spo2Pct` only, with no candidate fallback at all
-            // (unlike the classic `TodayView`/`VitalSignsSummary`), so an Oura-only or BLE-only WHOOP
-            // 5/MG install with the experimental toggle ON still saw a bare "—" here. Falls back to the
-            // device-conditional "spo2_candidate" mean (WHOOP: `spo2_candidate_82`; Oura: ceiling@100
-            // `0x6F`, see `AnalyticsEngine.nightlySpo2CeilingMean`) only when `spo2Pct` is nil AND the
-            // toggle is ON — same gating as the classic tile, never as the default.
-            let spo2Real = displayDay?.spo2Pct ?? vitalsDay?.spo2Pct
-            let spo2CandidateValue = spo2Real == nil
-                ? spo2CandidateByDay[cachedDisplayDay?.day ?? selectedDayKey]
-                : nil
-            let spo2 = spo2Real ?? spo2CandidateValue
-            ktile(String(localized: "Blood Oxygen"), icon: keyMetricIcon(metric), intText(spo2), "%", StrandPalette.metricCyan, fracOver(spo2, 100), key: spo2CandidateValue != nil ? "spo2_candidate" : "spo2",
-                  caption: spo2CandidateValue != nil ? String(localized: "strap estimate (unverified)") : nil)
+            let calibrated = displayDay?.spo2Pct ?? vitalsDay?.spo2Pct
+            let candidate = calibrated == nil ? windowedSpark("spo2_candidate").last : nil
+            let spo2 = calibrated ?? candidate
+            let isEstimate = calibrated == nil && candidate != nil
+            let detail = MetricCatalog.all.first(where: { $0.key == "spo2" })
+            ktile(String(localized: "Blood Oxygen"), icon: keyMetricIcon(metric),
+                  spo2.map { String(format: "%.0f%%", locale: AppLanguage.activeLocale, $0) } ?? "—",
+                  "", StrandPalette.metricCyan,
+                  fracOver(spo2, 100), key: isEstimate ? "spo2_candidate" : "spo2",
+                  detailMetric: detail)
         case .respiratory:
             let resp = displayDay?.respRateBpm ?? vitalsDay?.respRateBpm ?? respDay?.respRateBpm
             ktile(String(localized: "Respiratory"), icon: keyMetricIcon(metric), resp.map { String(format: "%.1f", locale: AppLanguage.activeLocale, $0) } ?? "—", "rpm", StrandPalette.accent, fracOver(resp, 24), key: "resp_rate")

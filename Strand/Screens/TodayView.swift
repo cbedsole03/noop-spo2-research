@@ -3746,13 +3746,10 @@ struct TodayView: View {
             let spo2Value = spo2.value == "—" && candidateTail != nil
                 ? String(format: "%.0f%%", locale: AppLanguage.activeLocale, candidateTail!)
                 : spo2.value
-            let spo2Caption: String = spo2.value == "—" && candidateTail != nil
-                ? String(localized: "strap estimate (unverified)")
-                : (spo2.caption ?? "")
             StatTile(
                 label: "Blood Oxygen",
                 value: spo2Value,
-                caption: spo2Caption,
+                caption: spo2.caption ?? "",
                 accent: spo2Value == "—" ? StrandPalette.textPrimary : StrandPalette.metricCyan,
                 sparkline: spo2.value == "—" && candidateTail != nil ? sparks["spo2_candidate"] : sparks["spo2"],
                 sparkColor: StrandPalette.metricCyan
