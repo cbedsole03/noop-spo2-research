@@ -161,6 +161,7 @@ public enum WhoopCommand: UInt8, CaseIterable {
     case getFeatureFlagValue = 128
     case toggleIMUMode         = 106
     case enableOpticalData     = 107
+    case toggleOpticalMode     = 108
     /// SET_CONFIG / SET_FF_VALUE (0x78) — write one persistent device feature-flag. Used by the
     /// WHOOP 5.0/MG "enable R22 packets" sequence that switches on the deep biometric streams the
     /// strap otherwise withholds from third-party apps (documented independently by judes.club and
@@ -237,6 +238,7 @@ public enum WhoopCommand: UInt8, CaseIterable {
         case .getFeatureFlagValue:   return "Get Feature Flag Value"
         case .toggleIMUMode:         return "Toggle IMU Mode"
         case .enableOpticalData:     return "Enable Optical Data"
+        case .toggleOpticalMode:     return "Toggle Optical Mode"
         case .setConfig:             return "Set Config (R22 feature flag)"
         case .setDeviceConfig:       return "Set Device Config (broadcast HR)"
         case .runHapticsPattern:     return "Run Haptics Pattern"

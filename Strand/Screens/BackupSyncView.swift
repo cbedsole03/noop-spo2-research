@@ -7,6 +7,7 @@ import StrandDesign
 /// Google Drive / iCloud / Dropbox for off-device sync with no in-app cloud account.
 struct BackupSyncView: View {
     @EnvironmentObject var model: AppModel
+    @EnvironmentObject var live: LiveState
 
     @State private var auto = FolderBackup.autoEnabled
     @State private var folderLabel = FolderBackup.folderLabel()
@@ -20,7 +21,7 @@ struct BackupSyncView: View {
     @State private var serverArchiveLastMs = ServerArchiveSync.lastSuccessMs
     @State private var serverArchiveStatus = ServerArchiveSync.lastStatus
     @State private var serverArchiveBusy = false
-    @State private var rawResearchCapture = UserDefaults.standard.bool(forKey: "enableRawCapture")
+    @State private var rawCaptureDuration: Double = 300
 
     // Result alert (backup outcome / restore outcome).
     @State private var alertTitle = ""
@@ -228,15 +229,54 @@ struct BackupSyncView: View {
                     }
                 }
 
-                Toggle("Capture raw WHOOP data for research", isOn: $rawResearchCapture)
-                    .toggleStyle(.switch)
-                    .tint(StrandPalette.accent)
-                    .onChangeCompat(of: rawResearchCapture) { on in
-                        UserDefaults.standard.set(on, forKey: "enableRawCapture")
+                Divider()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Raw optical research capture")
+                        .font(StrandFont.body).foregroundStyle(StrandPalette.textPrimary)
+                    Text("WHOOP 4.0 only. Records every live BLE frame while requesting the known raw and optical modes, then restores them and syncs matching type-47 history. In those records, bytes 68–69 are raw red ADC and bytes 70–71 are raw IR ADC (little-endian u16 values); bytes 85 and 86 remain unmapped and are retained for comparison. This does not calculate SpO₂.")
+                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Picker("Capture duration", selection: $rawCaptureDuration) {
+                        Text("30 sec").tag(30.0)
+                        Text("1 min").tag(60.0)
+                        Text("3 min").tag(180.0)
+                        Text("5 min").tag(300.0)
                     }
-                Text("Off by default. Turn this on before the next strap sync to preserve direct BLE frames alongside normal local data. Raw capture stays on this phone until you manually send a snapshot; existing retention limits still protect phone storage.")
-                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .pickerStyle(.segmented)
+                    .disabled(live.rawOpticalCaptureActive)
+
+                    if live.rawOpticalCaptureActive {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            if let endsAt = live.rawOpticalCaptureEndsAt {
+                                Text("Capturing · ends \(Date(timeIntervalSince1970: endsAt), style: .timer)")
+                                    .monospacedDigit()
+                            } else {
+                                Text("Capturing raw frames…")
+                            }
+                        }
+                        .font(StrandFont.caption)
+                        .foregroundStyle(StrandPalette.accent)
+
+                        NoopButton("Stop capture", systemImage: "stop.fill",
+                                   kind: .destructive, fullWidth: true) {
+                            model.ble.stopRawOpticalCapture()
+                        }
+                    } else {
+                        NoopButton("Start raw capture", systemImage: "waveform.path.ecg",
+                                   kind: .secondary, fullWidth: true) {
+                            model.ble.beginRawOpticalCapture(seconds: rawCaptureDuration)
+                        }
+                        .disabled(!live.connected || !live.bonded || live.backfilling || model.whoop5Detected)
+                    }
+
+                    Text(live.rawOpticalCaptureStatus)
+                        .font(StrandFont.caption)
+                        .foregroundStyle(StrandPalette.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 Text(serverArchiveLastMs > 0 ? "Last server upload: \(relativeTime(serverArchiveLastMs))" : "No server upload yet.")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)

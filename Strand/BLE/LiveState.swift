@@ -448,6 +448,14 @@ public final class LiveState: ObservableObject {
     /// Settings "Export" / "Reveal" actions target this URL.
     @Published public var puffinCaptureURL: URL?
 
+    /// WHOOP 4.0 bounded raw-optical research session. Unlike the retired global raw-capture switch,
+    /// this can only become active through an explicit Start tap and always has a finite deadline.
+    @Published public var rawOpticalCaptureActive = false
+    @Published public var rawOpticalCaptureEndsAt: TimeInterval?
+    /// Human-readable lifecycle result for Backup & Sync: ready, capturing, syncing, or completed.
+    /// Diagnostic only; no analysis or health metric reads it.
+    @Published public var rawOpticalCaptureStatus = "Ready to capture."
+
     /// Set when a WHOOP 5/MG strap refuses the encrypted bond on first connect ("Encryption/Authentication
     /// is insufficient") — CoreBluetooth won't start a fresh just-works bond against a strap still bonded to
     /// the official WHOOP app. Surfaced as actionable pairing-mode guidance; cleared once the link bonds.
