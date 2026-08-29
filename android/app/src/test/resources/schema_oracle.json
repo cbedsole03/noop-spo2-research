@@ -1649,6 +1649,22 @@
             "default": null
           },
           "divergence": "room-omits-sql-default"
+        },
+        {
+          "name": "auxByte85",
+          "affinity": "INTEGER",
+          "notNull": false,
+          "default": null,
+          "androidAbsent": true,
+          "divergence": "whoop4-spo2-tail-ios-only"
+        },
+        {
+          "name": "auxByte86",
+          "affinity": "INTEGER",
+          "notNull": false,
+          "default": null,
+          "androidAbsent": true,
+          "divergence": "whoop4-spo2-tail-ios-only"
         }
       ],
       "primaryKey": [
