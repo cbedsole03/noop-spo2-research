@@ -781,6 +781,12 @@ public final class BLEManager: NSObject, ObservableObject {
     /// Re-entrancy guard for captureRawAccel: true while a bounded on-demand window is running.
     /// A second tap is a no-op until the active capture's asyncAfter block fires and clears this.
     private var rawCaptureInFlight = false
+    /// Auto-stop handle for the user-started WHOOP 4 raw-optical session.
+    private var rawOpticalCaptureStopWorkItem: DispatchWorkItem?
+    /// A finite, wall-clock gate shared with Collector + Backfiller so the sync immediately after a
+    /// capture preserves its full type-47 frames. A deadline, never a boolean, prevents 24/7 capture.
+    private static let researchRawCaptureUntilKey = "noopRawResearchCaptureUntil"
+    private static let researchRawHistoryGraceSeconds: TimeInterval = 180
     /// Ordered queue of frames awaiting drain through the serial Backfiller task.
     private var backfillFrameQueue: [[UInt8]] = []
     /// True while the drain task is running (prevents a second drain task from launching).
@@ -1174,9 +1180,13 @@ public final class BLEManager: NSObject, ObservableObject {
         // the `deviceRowForTest` helper), so this is dormant, but still wrong data on disk.
         let registeredName = (try? registry.all())?.first(where: { $0.id == deviceId })?.displayName
         try? await store.upsertDevice(id: deviceId, mac: nil, name: registeredName)
-        // Research toggle — OFF by default. It is read for each completed batch so the Backup &
-        // Sync research switch can start/stop capture without recreating the BLE pipeline.
-        let rawCaptureEnabled = { UserDefaults.standard.bool(forKey: "enableRawCapture") }
+        // Retire the old persistent capture switch. Raw BLE persistence is now allowed only until the
+        // finite deadline written by an explicit timed-session Start tap.
+        UserDefaults.standard.removeObject(forKey: "enableRawCapture")
+        let rawCaptureEnabled = {
+            UserDefaults.standard.double(forKey: BLEManager.researchRawCaptureUntilKey)
+                > Date().timeIntervalSince1970
+        }
         collector = Collector(store: store, deviceId: deviceId,
                               rawCaptureEnabled: rawCaptureEnabled)
         // The store can finish bootstrapping AFTER connect(model:) already ran (both wait on
@@ -1681,8 +1691,7 @@ public final class BLEManager: NSObject, ObservableObject {
     }
 
     /// Capture raw accelerometer (type-43 IMU) frames on demand for a bounded window, then stop.
-    /// Persists raw even when the global research toggle is off (that's the point: on-demand, not
-    /// 24/7). The Collector's window auto-expires at its deadline so a dropped stop can't leak raw.
+    /// The Collector's window auto-expires at its deadline so a dropped stop cannot leak raw capture.
     public func captureRawAccel(seconds: TimeInterval = 30) {
         guard !rawCaptureInFlight else {
             log("Raw-accel capture: already in flight — ignoring")
@@ -1696,18 +1705,104 @@ public final class BLEManager: NSObject, ObservableObject {
         log("Raw-accel capture: started for \(secs)s")
         DispatchQueue.main.asyncAfter(deadline: .now() + secs) { [weak self] in
             guard let self else { return }
-            // Only stop the raw stream if the 24/7 research toggle is OFF.  When it's ON, the
-            // continuous stream must keep running — we just flush/upload the bounded window we
-            // captured without halting the wider session.
-            if !UserDefaults.standard.bool(forKey: "enableRawCapture") {
-                self.send(.stopRawData, payload: [0x01])
-            }
+            self.send(.stopRawData, payload: [0x01])
             self.rawCaptureInFlight = false
             Task { @MainActor in
                 await self.collector?.endRawCapture()
             }
             self.log("Raw-accel capture: stopped + flushed")
         }
+    }
+
+    /// Start a bounded WHOOP 4.0 research session. This requests the strap's known raw/optical modes
+    /// and stores every live BLE frame verbatim; it does not claim those commands expose red/IR or
+    /// calculate SpO2. When the timer ends, the modes are restored and a history sync is requested so
+    /// matching type-47 records are archived too, including raw red ADC at bytes 68–69, raw IR ADC
+    /// at bytes 70–71 (each a little-endian u16), and the still-unmapped bytes 85 and 86.
+    @discardableResult
+    public func beginRawOpticalCapture(seconds: TimeInterval) -> Bool {
+        guard state.connected, state.bonded else {
+            state.rawOpticalCaptureStatus = "Connect and bond your WHOOP 4.0 before starting a capture."
+            return false
+        }
+        guard !isWhoop5 else {
+            state.rawOpticalCaptureStatus = "This raw optical experiment currently targets WHOOP 4.0 only."
+            return false
+        }
+        guard !backfilling else {
+            state.rawOpticalCaptureStatus = "Wait for the current history sync to finish, then start the capture."
+            return false
+        }
+        guard !rawCaptureInFlight else {
+            state.rawOpticalCaptureStatus = "A raw capture session is already running."
+            return false
+        }
+
+        let secs = RawCaptureWindow.clamp(seconds)
+        let now = Date().timeIntervalSince1970
+        rawCaptureInFlight = true
+        state.rawOpticalCaptureActive = true
+        state.rawOpticalCaptureEndsAt = now + secs
+        state.rawOpticalCaptureStatus = "Capturing every raw BLE frame for \(Int(secs)) seconds…"
+        // The extra bounded grace period covers the immediately-following historical offload. It is
+        // cleared as soon as that offload ends, and remains finite if the link disappears mid-session.
+        UserDefaults.standard.set(now + secs + Self.researchRawHistoryGraceSeconds,
+                                  forKey: Self.researchRawCaptureUntilKey)
+        collector?.beginRawCapture(seconds: secs)
+
+        send(.startRawData, payload: [0x01])
+        send(.enableOpticalData, payload: [0x01])
+        send(.toggleOpticalMode, payload: [0x01])
+        log("Raw-optical capture: started for \(Int(secs))s; requested raw + optical modes")
+
+        rawOpticalCaptureStopWorkItem?.cancel()
+        let stop = DispatchWorkItem { [weak self] in
+            self?.finishRawOpticalCapture(requestHistorySync: true)
+        }
+        rawOpticalCaptureStopWorkItem = stop
+        DispatchQueue.main.asyncAfter(deadline: .now() + secs, execute: stop)
+        return true
+    }
+
+    /// Stop a user-started raw optical session early. Safe to call after the automatic timer fired.
+    public func stopRawOpticalCapture() {
+        finishRawOpticalCapture(requestHistorySync: true)
+    }
+
+    private func finishRawOpticalCapture(requestHistorySync: Bool) {
+        guard state.rawOpticalCaptureActive else { return }
+        rawOpticalCaptureStopWorkItem?.cancel()
+        rawOpticalCaptureStopWorkItem = nil
+
+        // Best-effort restoration. send safely ignores these if the strap disconnected.
+        send(.toggleOpticalMode, payload: [0x00])
+        send(.enableOpticalData, payload: [0x00])
+        send(.stopRawData, payload: [0x01])
+        rawCaptureInFlight = false
+        state.rawOpticalCaptureActive = false
+        state.rawOpticalCaptureEndsAt = nil
+
+        let shouldSync = requestHistorySync && state.connected && state.bonded
+        if shouldSync {
+            state.rawOpticalCaptureStatus = "Capture saved. Syncing matching historical records…"
+            UserDefaults.standard.set(Date().timeIntervalSince1970 + Self.researchRawHistoryGraceSeconds,
+                                      forKey: Self.researchRawCaptureUntilKey)
+        } else {
+            state.rawOpticalCaptureStatus = "Capture saved. Reconnect before syncing matching history."
+            UserDefaults.standard.removeObject(forKey: Self.researchRawCaptureUntilKey)
+        }
+
+        Task { @MainActor in
+            await self.collector?.endRawCapture()
+            if shouldSync {
+                self.syncNow()
+                if !self.backfilling {
+                    UserDefaults.standard.removeObject(forKey: Self.researchRawCaptureUntilKey)
+                    self.state.rawOpticalCaptureStatus = "Capture saved, but the matching history sync could not start."
+                }
+            }
+        }
+        log("Raw-optical capture: stopped + flushed; history sync requested=\(shouldSync)")
     }
 
     /// Send a command to the WHOOP strap.
@@ -2129,6 +2224,17 @@ public final class BLEManager: NSObject, ObservableObject {
         guard backfilling else { return }
         backfilling = false
         state.backfilling = false
+        // A timed raw-optical session deliberately leaves archival open for this one matching
+        // historical offload. Close it immediately on any terminal outcome instead of waiting for
+        // the grace deadline, and make the result visible beside the capture control.
+        let rawResearchSyncPending = UserDefaults.standard.double(
+            forKey: Self.researchRawCaptureUntilKey) > Date().timeIntervalSince1970
+        if rawResearchSyncPending && !state.rawOpticalCaptureActive {
+            UserDefaults.standard.removeObject(forKey: Self.researchRawCaptureUntilKey)
+            state.rawOpticalCaptureStatus = reason == "HISTORY_COMPLETE"
+                ? "Capture complete. Matching history synced; raw data is ready to upload."
+                : "Capture saved, but the matching history sync ended: \(reason)."
+        }
         // #174: a backfill just ended. Start (or extend) the deep-packet cooldown from this instant so
         // any type-0x2F records the strap flushes in the seconds after the session aren't miscounted as
         // the live R22 stream — they're the offload's tail.
@@ -3978,6 +4084,10 @@ public final class BLEManager: NSObject, ObservableObject {
     /// gate AND the BackfillPolicy rate-limiter for the trigger. On a go: records the attempt time
     /// (persisted) and starts the offload.
     func requestSync(_ trigger: BackfillTrigger) {
+        guard !state.rawOpticalCaptureActive else {
+            log("Backfill: \(trigger) deferred while raw-optical capture is active")
+            return
+        }
         guard BLEManager.shouldRunPeriodicBackfill(
             connected: state.connected, bonded: state.bonded, backfilling: backfilling) else { return }
         let now = Date().timeIntervalSince1970
